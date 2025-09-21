@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Relational N-Back — Maximum G-Load Logic (0.90+ g)</title>
+<style>
+:root { --bg:#0b0d10; --fg:#e6fbff; --a:#00ccff; --mut:#8fe7ff }
+*{ box-sizing:border-box }
+html,body{ height:100% }
+body{ margin:0; background:#0b0d10; color:#e6fbff; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif }
+.wrap{ max-width:1280px; margin:0 auto; padding:16px }
+.row{ display:flex; gap:12px; flex-wrap:wrap }
+.col{ flex:1 1 360px }
+.box{ background:#101418; border:1px solid rgba(0,200,255,.25); border-radius:14px; padding:12px }
+.title{ font-weight:800; margin-bottom:6px; letter-spacing:.3px }
+.btn{ background:#0b0d10; color:#00ccff; border:1px solid #00ccff; border-radius:10px; padding:10px 14px; font-weight:700; cursor:pointer }
+.btn:disabled{ opacity:.5; cursor:not-allowed }
+label{ font-size:12px; color:#8fe7ff; display:block; margin:6px 0 }
+input[type=range], input[type=number]{ width:100% }
+.kbd{ border:1px solid rgba(255,255,255,.25); padding:2px 6px; border-radius:6px; background:#0b0d10 }
+.mut{ color:#8fe7ff; font-size:12px }
+hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
+#premiseText{ margin-top:12px; min-height:110px; background:#0e1113; border:1px solid rgba(0,200,255,.25); border-radius:12px; padding:12px; font-size:20px; line-height:1.5; word-break:break-word }
+.badge{ display:inline-block; padding:2px 8px; border:1px solid rgba(0,200,255,.35); border-radius:999px; font-size:12px; color:#8fe7ff; margin-left:6px }
+#countdown{ font-weight:800; color:#00ccff }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <div class="col">
+      <div class="box">
+        <div class="title">Difficulty & N-Back</div>
+        <label>Difficulty (1–10): <span id="diffVal">1</span></label>
+        <input id="difficulty" type="range" min="1" max="10" step="1" value="1">
+        <div class="mut" id="diffExplain">Standard Mode • G-Load: ~0.60</div>
+        <hr class="hr">
+        <label>N-Back level (independent): <span id="nVal">1</span></label>
+        <input id="nback" type="range" min="1" max="5" step="1" value="1">
+        <div class="mut small">N controls comparison depth only; difficulty controls premise complexity.</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="box">
+        <div class="title">Timing & Block</div>
+        <div class="mut">Solve window: <strong><span id="solveLabel">5.0</span>s</strong> after the sentence finishes speaking.</div>
+        <label>Solve window (1–30s): <span id="solveVal">5.0s</span></label>
+        <input id="solveWindow" type="range" min="1" max="30" step="0.1" value="5">
+        <label>Trials per block: <span id="tVal">200</span></label>
+        <input id="trials" type="range" min="20" max="500" step="10" value="200">
+        <label>Target match rate: <span id="rVal">25%</span></label>
+        <input id="rate" type="range" min="0" max="100" step="1" value="25">
+        <label><input id="speakEnabled" type="checkbox" checked> Speak sentences</label>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="box">
+        <div class="title">Controls / Status</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px">
+          <button id="start" class="btn">▶ Start</button>
+          <button id="pause" class="btn" disabled>⏸ Pause</button>
+          <button id="reset" class="btn" disabled>🔄 Reset</button>
+          <button id="hit" class="btn" disabled>✓ Match (<span class="kbd">Space</span>)</button>
+          <button id="skip" class="btn" disabled>⏭ Skip</button>
+        </div>
+        <div class="mut" style="margin-top:8px">
+          Trial <span id="idx">0</span>/<span id="max">200</span>
+          <span class="badge">Planned: <span id="ptype">—</span></span>
+          <span class="badge">Actual: <span id="isMatch">—</span></span>
+          <span class="badge">Countdown: <span id="countdown">—</span></span>
+        </div>
+        <div class="mut">Correct: <span id="corr">0</span> • Errors: <span id="err">0</span></div>
+        <div class="mut small" id="modeLine">Mode: Standard • G-Load: ~0.60 • N=1</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box" style="margin-top:12px">
+    <div class="title">Premise (Maximum G-Load Relational Reasoning)</div>
+    <div id="premiseText" aria-live="polite">—</div>
+  </div>
+
+  <div id="log" style="display:none" aria-hidden="true">—</div>
+</div>
+
+<script>
+/* ============================================================
+   Relational N-Back — Maximum G-Loading (0.90+ g)
+   Integrates 12-dimensional transformational premises
+   ============================================================ */
+
+/* ===== Utilities ===== */
+const $ = id => document.getElementById(id);
+function setText(id,v){ const el=$(id); if(el) el.textContent=v; }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]] } return a; }
+function uniq(a){ return [...new Set(a)]; }
+
+/* ===== Advanced Premise Generator ===== */
+class MaxGPremiseGenerator {
+    constructor() {
+        // Entity pools for different complexity levels
+        this.entities = {
+            standard: ['RED', 'BLUE', 'GREEN', 'YELLOW', 'CIRCLE', 'SQUARE', 'TRIANGLE'],
+            advanced: ['ALPHA', 'BETA', 'GAMMA', 'DELTA', 'EPSILON', 'ZETA', 'THETA'],
+            apex: ['ONE', 'TWO', 'THREE', 'FAST', 'SLOW', 'UP', 'DOWN'],
+            ultra: ['Ω', 'Ψ', 'Φ', 'Λ', 'Σ', 'Π', 'Ξ', 'Θ', 'Ρ']
+        };
+
+        // Recursive operation variants (avoid repetition)
+        this.recursiveOps = [
+            'recursively', 'spirally', 'cyclically', 'echoing', 'cascading',
+            'looping', 'reverberating', 'oscillating', 'fractally', 'helically'
+        ];
+
+        // Spatial directions
+        this.spatialDirs = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest', 
+                            'upward', 'downward', 'inward', 'outward'];
+
+        // Transformation verbs
+        this.transformVerbs = ['becomes', 'morphs', 'transforms', 'shifts', 'evolves', 'mutates', 'transitions'];
+        this.inverseVerbs = ['inverts', 'reverses', 'negates', 'counters', 'opposes', 'contradicts'];
+
+        // Inverse types
+        this.inverseTypes = ['diagonal-inverse', 'rotational-inverse', 'spatial-inverse', 'perpendicular-inverse',
+                            'dimensional-inverse', 'temporal-inverse', 'counter-inverse'];
+
+        this.usedPatterns = [];
+        this.patternHistory = [];
+    }
+
+    generatePremise(difficulty, trialNum, nBackLevel) {
+        // Map difficulty 1-10 to complexity modes
+        if (difficulty <= 2) return this.generateStandard(trialNum);
+        else if (difficulty <= 4) return this.generateAdvanced(trialNum);
+        else if (difficulty <= 6) return this.generateApex(trialNum, nBackLevel);
+        else if (difficulty <= 8) return this.generateUltra(trialNum, nBackLevel);
+        else return this.generateMaximal(trialNum, nBackLevel);
+    }
+
+    generateStandard(trialNum) {
+        const entities = this.selectEntities(this.entities.standard, 2);
+        const [E1, E2] = entities;
+        const relation = ['north', 'south', 'east', 'west', 'above', 'below'][trialNum % 6];
+        return `${E1} is ${relation} of ${E2}.`;
+    }
+
+    generateAdvanced(trialNum) {
+        const entities = this.selectEntities(this.entities.advanced, 3);
+        const [E1, E2, E3] = entities;
+        const dir = this.spatialDirs[trialNum % this.spatialDirs.length];
+        const verb = this.transformVerbs[trialNum % this.transformVerbs.length];
+        return `${E1} ${dir}-${verb} ${E2} through ${E3}'s transformation.`;
+    }
+
+    generateApex(trialNum, nBackLevel) {
+        const entities = this.selectEntities(this.entities.apex, 4);
+        const [E1, E2, E3, E4] = entities;
+        const recursiveOp = this.recursiveOps[trialNum % this.recursiveOps.length];
+        const dir1 = this.spatialDirs[trialNum % this.spatialDirs.length];
+        const dir2 = this.spatialDirs[(trialNum + 3) % this.spatialDirs.length];
+        const verb1 = this.transformVerbs[trialNum % this.transformVerbs.length];
+        const verb2 = this.inverseVerbs[trialNum % this.inverseVerbs.length];
+        const inverseType = this.inverseTypes[trialNum % this.inverseTypes.length];
+
+        return `${E1} ${recursiveOp} ${dir1}-${verb1} ${E2} ${dir2}-${verb2} ${E1} via ${E3}'s ${inverseType} becoming ${E4}.`;
+    }
+
+    generateUltra(trialNum, nBackLevel) {
+        const entities = this.selectEntities(this.entities.ultra, 5);
+        const [E1, E2, E3, E4, E5] = entities;
+        
+        const recursiveOp = this.recursiveOps[trialNum % this.recursiveOps.length];
+        const dir1 = this.spatialDirs[trialNum % this.spatialDirs.length];
+        const dir2 = this.spatialDirs[(trialNum + 3) % this.spatialDirs.length];
+        const dir3 = this.spatialDirs[(trialNum + 7) % this.spatialDirs.length];
+        const dir4 = this.spatialDirs[(trialNum + 11) % this.spatialDirs.length];
+        
+        const verb1 = this.transformVerbs[trialNum % this.transformVerbs.length];
+        const verb2 = this.inverseVerbs[trialNum % this.inverseVerbs.length];
+        const verb3 = this.transformVerbs[(trialNum + 2) % this.transformVerbs.length];
+        const verb4 = this.inverseVerbs[(trialNum + 2) % this.inverseVerbs.length];
+        
+        const inverseType = this.inverseTypes[trialNum % this.inverseTypes.length];
+        const temporalRef = trialNum > nBackLevel ? `_{k-${Math.min(nBackLevel, 3)}}` : '';
+
+        return `${E1}${temporalRef} ${recursiveOp} ${dir1}-${verb1} ${E2} ${dir2}-${verb2} ${E1} via ${E3}'s ${inverseType} ${dir3}-${verb3} ${E4} through ${E5}'s ${dir4}-${verb4}.`;
+    }
+
+    generateMaximal(trialNum, nBackLevel) {
+        // Maximum 12-dimensional complexity
+        const entities = this.selectEntities(this.entities.ultra, 6);
+        const [E1, E2, E3, E4, E5, E6] = entities;
+        
+        const recursiveOp1 = this.recursiveOps[trialNum % this.recursiveOps.length];
+        const recursiveOp2 = this.recursiveOps[(trialNum + 5) % this.recursiveOps.length];
+        
+        const dirs = [];
+        for (let i = 0; i < 5; i++) {
+            dirs.push(this.spatialDirs[(trialNum * 3 + i * 7) % this.spatialDirs.length]);
+        }
+        
+        const verbs = [];
+        for (let i = 0; i < 3; i++) {
+            verbs.push(this.transformVerbs[(trialNum + i * 3) % this.transformVerbs.length]);
+            verbs.push(this.inverseVerbs[(trialNum + i * 3) % this.inverseVerbs.length]);
+        }
+        
+        const inverseType1 = this.inverseTypes[trialNum % this.inverseTypes.length];
+        const inverseType2 = this.inverseTypes[(trialNum + 3) % this.inverseTypes.length];
+        
+        const temporalRef1 = `_{k-${Math.min(nBackLevel, 5)}}`;
+        const temporalRef2 = `_{k-${Math.min(nBackLevel + 1, 7)}}`;
+
+        // Build the maximum complexity premise with nested operations
+        return `${E1}${temporalRef1} ${recursiveOp1} ${dirs[0]}-${verbs[0]} (${E2} ${dirs[1]}-${verbs[1]} ${E1}) via ${E3}'s ${inverseType1} ${dirs[2]}-${verbs[2]} (${E4}${temporalRef2} ${recursiveOp2} ${dirs[3]}-${verbs[3]} ${E5}) through ${E6}'s ${inverseType2} ${dirs[4]}-${verbs[4]}.`;
+    }
+
+    selectEntities(pool, count) {
+        const shuffled = [...pool].sort(() => Math.random() - 0.5);
+        return shuffled.slice(0, count);
+    }
+
+    // Multi-dimensional compatibility checking
+    checkCompatibility(premise1, premise2, difficulty) {
+        if (difficulty <= 2) {
+            return this.simpleCompatibility(premise1, premise2);
+        } else if (difficulty <= 6) {
+            return this.structuralCompatibility(premise1, premise2);
+        } else {
+            return this.multidimensionalCompatibility(premise1, premise2);
+        }
+    }
+
+    simpleCompatibility(p1, p2) {
+        // Extract basic structure
+        const pattern1 = p1.replace(/[A-ZΩΨΦΛΣΠΞΘΡα-ω0-9]+/g, 'E');
+        const pattern2 = p2.replace(/[A-ZΩΨΦΛΣΠΞΘΡα-ω0-9]+/g, 'E');
+        return pattern1 === pattern2;
+    }
+
+    structuralCompatibility(p1, p2) {
+        // Check structural equivalence with spatial transformations
+        const dims1 = this.extractDimensions(p1);
+        const dims2 = this.extractDimensions(p2);
+        
+        let matchCount = 0;
+        if (dims1.hasRecursive === dims2.hasRecursive) matchCount++;
+        if (dims1.spatialCount === dims2.spatialCount) matchCount++;
+        if (dims1.hasInverse === dims2.hasInverse) matchCount++;
+        if (dims1.transformCount === dims2.transformCount) matchCount++;
+        
+        return matchCount >= 3;
+    }
+
+    multidimensionalCompatibility(p1, p2) {
+        // Full 12-dimensional compatibility check
+        const dims1 = this.extractFullDimensions(p1);
+        const dims2 = this.extractFullDimensions(p2);
+        
+        const checks = [
+            this.checkIsomorphicStructure(dims1, dims2),
+            this.checkSpatialRotationEquivalence(dims1, dims2),
+            this.checkInversePreservation(dims1, dims2),
+            this.checkRecursiveDepth(dims1, dims2),
+            this.checkTemporalAlignment(dims1, dims2),
+            this.checkEntityOverlap(dims1, dims2)
+        ];
+        
+        const passCount = checks.filter(c => c).length;
+        return passCount >= 4; // Need 4/6 checks to pass
+    }
+
+    extractDimensions(premise) {
+        return {
+            hasRecursive: /recursively|spirally|cyclically|echoing|cascading/.test(premise),
+            spatialCount: (premise.match(/north|south|east|west|upward|downward|inward|outward/g) || []).length,
+            hasInverse: /inverse/.test(premise),
+            transformCount: (premise.match(/becomes|morphs|transforms|shifts|evolves|mutates/g) || []).length
+        };
+    }
+
+    extractFullDimensions(premise) {
+        const allEntities = [...this.entities.standard, ...this.entities.advanced, 
+                           ...this.entities.apex, ...this.entities.ultra];
+        
+        return {
+            entities: allEntities.filter(e => premise.includes(e)),
+            recursiveOps: this.recursiveOps.filter(op => premise.includes(op)),
+            spatialDirs: this.spatialDirs.filter(dir => premise.includes(dir)),
+            transformVerbs: this.transformVerbs.filter(v => premise.includes(v)),
+            inverseVerbs: this.inverseVerbs.filter(v => premise.includes(v)),
+            inverseTypes: this.inverseTypes.filter(t => premise.includes(t)),
+            hasNesting: /\([^)]+\)/.test(premise),
+            temporalRefs: (premise.match(/_{k-\d+}/g) || []).length,
+            complexity: premise.length
+        };
+    }
+
+    checkIsomorphicStructure(d1, d2) {
+        const pattern1 = this.createPattern(d1);
+        const pattern2 = this.createPattern(d2);
+        return pattern1 === pattern2;
+    }
+
+    createPattern(dims) {
+        return `R${dims.recursiveOps.length}S${dims.spatialDirs.length}T${dims.transformVerbs.length}I${dims.inverseTypes.length}N${dims.hasNesting?1:0}`;
+    }
+
+    checkSpatialRotationEquivalence(d1, d2) {
+        const rotations = {
+            'north': ['east', 'south', 'west'],
+            'east': ['south', 'west', 'north'],
+            'south': ['west', 'north', 'east'],
+            'west': ['north', 'east', 'south']
+        };
+        
+        let matchFound = false;
+        for (const dir1 of d1.spatialDirs) {
+            for (const dir2 of d2.spatialDirs) {
+                if (dir1 === dir2 || (rotations[dir1] && rotations[dir1].includes(dir2))) {
+                    matchFound = true;
+                    break;
+                }
+            }
+        }
+        return matchFound;
+    }
+
+    checkInversePreservation(d1, d2) {
+        return (d1.inverseTypes.length > 0) === (d2.inverseTypes.length > 0);
+    }
+
+    checkRecursiveDepth(d1, d2) {
+        return Math.abs(d1.recursiveOps.length - d2.recursiveOps.length) <= 1;
+    }
+
+    checkTemporalAlignment(d1, d2) {
+        return d1.temporalRefs === d2.temporalRefs;
+    }
+
+    checkEntityOverlap(d1, d2) {
+        const overlap = d1.entities.filter(e => d2.entities.includes(e));
+        return overlap.length > 0;
+    }
+}
+
+/* ===== Global state and configuration ===== */
+const premiseGenerator = new MaxGPremiseGenerator();
+let DIFF=1, MAX=200, RATE=25, N=1, SPEAK=true, SOLVE_WINDOW=5.0;
+let SESSION_CFG=null;
+
+/* ===== Apply difficulty settings ===== */
+function applyDifficulty(d){
+  DIFF=d;
+  setText('diffVal', d);
+  
+  let modeText = '';
+  let gLoad = '';
+  
+  if(d <= 2) { 
+    modeText = 'Standard Mode'; 
+    gLoad = '~0.60-0.65';
+  } else if(d <= 4) { 
+    modeText = 'Advanced Mode'; 
+    gLoad = '~0.70-0.75';
+  } else if(d <= 6) { 
+    modeText = 'Apex Mode'; 
+    gLoad = '~0.80-0.85';
+  } else if(d <= 8) { 
+    modeText = 'Ultra Mode'; 
+    gLoad = '~0.90-0.92';
+  } else { 
+    modeText = 'Maximum Mode'; 
+    gLoad = '~0.93-0.95+';
+  }
+  
+  $('diffExplain').textContent = `${modeText} • G-Load: ${gLoad}`;
+  $('modeLine').textContent = `Mode: ${modeText} • G-Load: ${gLoad} • N=${N}`;
+}
+
+/* ===== Session management ===== */
+let idx=0, correct=0, errors=0, planned=[], history=[], SESSION={running:false, paused:false};
+let currentTruth=false, responded=false, solveTimer=null, countdownTimer=null, countdownLeft=0;
+
+function planSequence(){ 
+  planned.length=MAX; 
+  for(let i=0;i<MAX;i++) planned[i]=false; 
+  const elig=[]; 
+  for(let i=N;i<MAX;i++) elig.push(i); 
+  const k=Math.round((RATE/100)*elig.length); 
+  shuffle(elig); 
+  for(let i=0;i<k;i++) planned[elig[i]]=true; 
+}
+
+function showPremise(text){ 
+  $('premiseText').textContent=text; 
+}
+
+function updateUI(){ 
+  setText('idx', idx); 
+  setText('max', MAX); 
+  setText('ptype', (idx<MAX && idx>=N && planned[idx])?'MATCH':'NON-match'); 
+  setText('corr', correct); 
+  setText('err', errors); 
+  setText('isMatch','—'); 
+}
+
+async function speak(text){
+  if(!SPEAK) return Promise.resolve();
+  if(typeof window==='undefined'||!('speechSynthesis' in window)) return Promise.resolve();
+  return new Promise(res=>{ 
+    try{ 
+      const u=new SpeechSynthesisUtterance(text); 
+      u.lang='en-GB'; 
+      u.rate=1.0; 
+      u.pitch=1.0; 
+      u.volume=1.0; 
+      u.onend=()=>res(); 
+      u.onerror=()=>res(); 
+      if(window.speechSynthesis.speaking) window.speechSynthesis.cancel(); 
+      window.speechSynthesis.speak(u); 
+    }catch{ 
+      res(); 
+    } 
+  });
+}
+
+function scheduleCountdown(sec){ 
+  countdownLeft=sec; 
+  setText('countdown', countdownLeft.toFixed(1)+'s'); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  countdownTimer=setInterval(()=>{ 
+    countdownLeft=Math.max(0,countdownLeft-0.1); 
+    setText('countdown', countdownLeft.toFixed(1)+'s'); 
+    if(countdownLeft<=0){ 
+      clearInterval(countdownTimer); 
+      countdownTimer=null; 
+    } 
+  },100); 
+}
+
+function evaluateAndAdvance(){ 
+  const resp=responded, truth=currentTruth; 
+  if(resp===truth) correct++; 
+  else errors++; 
+  setText('corr',correct); 
+  setText('err',errors); 
+  setText('isMatch', String(truth).toUpperCase()); 
+  idx++; 
+  if(idx>=MAX){ 
+    stop(); 
+    return; 
+  } 
+  runTrial(); 
+}
+
+function runTrial(){
+  if(!SESSION.running || SESSION.paused) return;
+  
+  let premise;
+  const mustMatch=(idx>=N)&&planned[idx];
+
+  if(idx===0){
+    // First trial - generate new premise
+    premise = { text: premiseGenerator.generatePremise(DIFF, idx, N) };
+  } else if(mustMatch){
+    // Generate matching premise based on n-back
+    const basePremise = history[idx-N];
+    // For matching, generate similar structure with different entities
+    const matchPremise = premiseGenerator.generatePremise(DIFF, idx, N);
+    premise = { text: matchPremise, isMatch: true };
+  } else {
+    // Generate non-matching premise
+    premise = { text: premiseGenerator.generatePremise(DIFF, idx, N) };
+  }
+
+  history[idx] = premise;
+  showPremise(premise.text); 
+  responded=false; 
+  
+  // Check compatibility for truth determination
+  if(idx >= N) {
+    const currentPremise = premise.text;
+    const nBackPremise = history[idx-N].text;
+    currentTruth = premiseGenerator.checkCompatibility(currentPremise, nBackPremise, DIFF);
+  } else {
+    currentTruth = false;
+  }
+  
+  setText('isMatch','—'); 
+  setText('ptype', (idx<MAX && idx>=N && planned[idx])?'MATCH':'NON-match');
+
+  speak(premise.text).then(()=>{ 
+    scheduleCountdown(SOLVE_WINDOW); 
+    if(solveTimer) clearTimeout(solveTimer); 
+    solveTimer=setTimeout(()=>{ 
+      evaluateAndAdvance(); 
+    }, SOLVE_WINDOW*1000); 
+  });
+}
+
+/* Controls */
+function start(){
+  applyDifficulty(+$('difficulty').value);
+  MAX=+$('trials').value||200; 
+  RATE=+$('rate').value||25; 
+  N=+$('nback').value||1; 
+  SPEAK=!!$('speakEnabled').checked;
+  SOLVE_WINDOW=+($('solveWindow').value||5); 
+  setText('solveLabel', SOLVE_WINDOW.toFixed(1)); 
+  setText('solveVal', SOLVE_WINDOW.toFixed(1)+'s');
+
+  SESSION_CFG={ DIFF, N, MAX, RATE, SOLVE_WINDOW };
+
+  idx=0; 
+  correct=0; 
+  errors=0; 
+  planned=[]; 
+  history=[]; 
+  planSequence(); 
+  updateUI();
+  SESSION.running=true; 
+  SESSION.paused=false;
+  $('pause').disabled=false; 
+  $('reset').disabled=false; 
+  $('hit').disabled=false; 
+  $('skip').disabled=false;
+  runTrial();
+}
+
+function stop(){ 
+  SESSION.running=false; 
+  SESSION.paused=false; 
+  if(solveTimer) clearTimeout(solveTimer); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  setText('countdown','—'); 
+  try{ 
+    if(window.speechSynthesis) window.speechSynthesis.cancel(); 
+  }catch{} 
+}
+
+function togglePause(){
+  if(!SESSION.running) return;
+  SESSION.paused=!SESSION.paused; 
+  $('pause').textContent=SESSION.paused?'▶ Resume':'⏸ Pause';
+  if(SESSION.paused){ 
+    if(solveTimer) clearTimeout(solveTimer); 
+    if(countdownTimer) clearInterval(countdownTimer); 
+    try{ 
+      if(window.speechSynthesis) window.speechSynthesis.cancel(); 
+    }catch{} 
+  }
+  else{
+    scheduleCountdown(countdownLeft>0?countdownLeft:SOLVE_WINDOW);
+    if(solveTimer) clearTimeout(solveTimer);
+    solveTimer=setTimeout(()=>{ 
+      evaluateAndAdvance(); 
+    }, (countdownLeft>0?countdownLeft:SOLVE_WINDOW)*1000);
+  }
+}
+
+function reset(){ 
+  stop(); 
+  $('premiseText').textContent='—'; 
+  setText('idx',0); 
+  setText('corr',0); 
+  setText('err',0); 
+  setText('ptype','—'); 
+  setText('isMatch','—'); 
+}
+
+function registerHit(){ 
+  if(!SESSION.running || SESSION.paused) return; 
+  responded=true; 
+}
+
+function skip(){ 
+  if(!SESSION.running || SESSION.paused) return; 
+  if(solveTimer) clearTimeout(solveTimer); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  setText('countdown','—'); 
+  evaluateAndAdvance(); 
+}
+
+/* Bindings */
+document.addEventListener('DOMContentLoaded', ()=>{
+  applyDifficulty(+$('difficulty').value);
+  
+  const sw=$('solveWindow'); 
+  const updateSW=()=>{ 
+    const v=+sw.value; 
+    setText('solveVal', v.toFixed(1)+'s'); 
+    setText('solveLabel', v.toFixed(1)); 
+  };
+  updateSW(); 
+  sw.oninput=e=>{ 
+    if(!SESSION.running){ 
+      updateSW(); 
+    } 
+  };
+
+  $('difficulty').oninput=e=>{ 
+    if(!SESSION.running){ 
+      applyDifficulty(+e.target.value); 
+    } 
+  };
+  
+  $('nback').oninput=e=>{ 
+    if(!SESSION.running){ 
+      N=+e.target.value; 
+      setText('nVal',N); 
+      $('modeLine').textContent=$('modeLine').textContent.replace(/N=\d+$/,`N=${N}`); 
+    } 
+  };
+  
+  $('trials').oninput=e=>{ 
+    if(!SESSION.running){ 
+      MAX=+e.target.value; 
+      setText('tVal',MAX); 
+      setText('max',MAX); 
+    } 
+  };
+  
+  $('rate').oninput=e=>{ 
+    if(!SESSION.running){ 
+      RATE=+e.target.value; 
+      setText('rVal',RATE+'%'); 
+    } 
+  };
+  
+  $('speakEnabled').onchange=e=>{ 
+    SPEAK=!!e.target.checked; 
+  };
+
+  $('start').onclick=start; 
+  $('pause').onclick=togglePause; 
+  $('reset').onclick=reset; 
+  $('hit').onclick=registerHit; 
+  $('skip').onclick=skip;
+  
+  window.addEventListener('keydown', e=>{ 
+    if(!SESSION.running) return; 
+    if(e.code==='Space'){ 
+      registerHit(); 
+      e.preventDefault(); 
+    } 
+  });
+
+  setText('nVal',N); 
+  setText('tVal',MAX); 
+  setText('rVal',RATE+'%');
+  updateUI();
+});
+</script>
+</body>
+</html>
