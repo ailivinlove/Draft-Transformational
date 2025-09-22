@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Relational N-Back — Maximum G-Load (0.92+ g)</title>
+<title>Hyper-Dense Relational N-Back — Maximum G-Load (1.0+ g)</title>
 <style>
 :root { --bg:#0b0d10; --fg:#e6fbff; --a:#00ccff; --mut:#8fe7ff }
 *{ box-sizing:border-box }
@@ -21,9 +21,13 @@ input[type=range], input[type=number]{ width:100% }
 .kbd{ border:1px solid rgba(255,255,255,.25); padding:2px 6px; border-radius:6px; background:#0b0d10 }
 .mut{ color:#8fe7ff; font-size:12px }
 hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
-#premiseText{ margin-top:12px; min-height:110px; background:#0e1113; border:1px solid rgba(0,200,255,.25); border-radius:12px; padding:12px; font-size:20px; line-height:1.5; word-break:break-word }
+#premiseContainer{ margin-top:12px; min-height:140px; background:#0e1113; border:1px solid rgba(0,200,255,.25); border-radius:12px; padding:12px; font-size:20px; line-height:1.8; word-break:break-word }
+.premise-line{ margin:8px 0; padding:6px 0; border-bottom:1px solid rgba(0,200,255,.15); font-family:'Courier New',monospace; letter-spacing:1px }
+.premise-line:last-child{ border-bottom:none; }
 .badge{ display:inline-block; padding:2px 8px; border:1px solid rgba(0,200,255,.35); border-radius:999px; font-size:12px; color:#8fe7ff; margin-left:6px }
 #countdown{ font-weight:800; color:#00ccff }
+.dimension-info{ font-size:10px; color:#4a8aff; margin-top:4px; opacity:0.7 }
+.conflict-marker{ color:#ff6b6b; font-weight:bold }
 </style>
 </head>
 <body>
@@ -34,18 +38,21 @@ hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
         <div class="title">Difficulty & N-Back</div>
         <label>Difficulty (1–10): <span id="diffVal">1</span></label>
         <input id="difficulty" type="range" min="1" max="10" step="1" value="1">
-        <div class="mut" id="diffExplain">Standard Mode • G-Load: ~0.60</div>
+        <div class="mut" id="diffExplain">Level 1: Dual-State • G-Load: ~0.60</div>
         <hr class="hr">
-        <label>N-Back level (independent): <span id="nVal">1</span></label>
+        <label>N-Back level: <span id="nVal">1</span></label>
         <input id="nback" type="range" min="1" max="5" step="1" value="1">
-        <div class="mut small">N controls comparison depth only; difficulty controls premise complexity.</div>
+        <hr class="hr">
+        <label>Statements per trial: <span id="stmtVal">1</span></label>
+        <input id="statements" type="range" min="1" max="5" step="1" value="1">
+        <div class="mut small">Multiple statements create cascading dependencies</div>
       </div>
     </div>
 
     <div class="col">
       <div class="box">
         <div class="title">Timing & Block</div>
-        <div class="mut">Solve window: <strong><span id="solveLabel">5.0</span>s</strong> after the sentence finishes speaking.</div>
+        <div class="mut">Solve window: <strong><span id="solveLabel">5.0</span>s</strong> after speaking.</div>
         <label>Solve window (1–30s): <span id="solveVal">5.0s</span></label>
         <input id="solveWindow" type="range" min="1" max="30" step="0.1" value="5">
         <label>Trials per block: <span id="tVal">200</span></label>
@@ -73,14 +80,14 @@ hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
           <span class="badge">Countdown: <span id="countdown">—</span></span>
         </div>
         <div class="mut">Correct: <span id="corr">0</span> • Errors: <span id="err">0</span></div>
-        <div class="mut small" id="modeLine">Mode: Standard • G-Load: ~0.60 • N=1</div>
+        <div class="mut small" id="modeLine">Level 1: Dual-State • G-Load: ~0.60 • N=1</div>
       </div>
     </div>
   </div>
 
   <div class="box" style="margin-top:12px">
-    <div class="title">Premise (10-Dimensional Relational Reasoning)</div>
-    <div id="premiseText" aria-live="polite">—</div>
+    <div class="title">Hyper-Dense Multi-Dimensional Premise <span class="badge">≤8 words</span></div>
+    <div id="premiseContainer" aria-live="polite">—</div>
   </div>
 
   <div id="log" style="display:none" aria-hidden="true">—</div>
@@ -88,397 +95,413 @@ hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
 
 <script>
 /* ============================================================
-   Maximum G-Load Relational N-Back (0.92+ g)
-   Full 10-dimensional premise tracking with self-referential loops
+   HYPER-DENSE RELATIONAL N-BACK (1.0+ g)
+   Full Super-SET implementation with multi-dimensional operations
    ============================================================ */
 
 /* ===== Utilities ===== */
 const $ = id => document.getElementById(id);
 function setText(id,v){ const el=$(id); if(el) el.textContent=v; }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]] } return a; }
-function uniq(a){ return [...new Set(a)]; }
 
-/* ===== MAXIMUM G-LOAD PREMISE GENERATOR (0.92+) ===== */
-class MaximalGLoadPremiseGenerator {
+/* ===== HYPER-DENSE MULTI-DIMENSIONAL PREMISE GENERATOR ===== */
+class HyperDensePremiseGenerator {
     constructor() {
-        // Entity pools by complexity
+        // Entity pools for multi-nodal integration
         this.entities = {
-            colors: ['RED', 'BLUE', 'GREEN', 'YELLOW', 'WHITE', 'BLACK', 'VIOLET', 'ORANGE'],
-            shapes: ['CIRCLE', 'SQUARE', 'TRIANGLE', 'DIAMOND', 'PENTAGON', 'HEXAGON', 'STAR', 'POINT'],
-            spatial: ['UP', 'DOWN', 'IN', 'OUT', 'NEAR', 'FAR', 'HIGH', 'LOW'],
-            numbers: ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'ZERO', 'INFINITY'],
-            temporal: ['NOW', 'THEN', 'SOON', 'LATE', 'EARLY', 'ALWAYS', 'NEVER', 'WHEN'],
-            speed: ['FAST', 'SLOW', 'QUICK', 'STEADY', 'RAPID', 'STILL', 'STOP', 'FREEZE'],
-            logic: ['YES', 'NO', 'TRUE', 'FALSE', 'MAYBE', 'PERHAPS', 'CERTAIN', 'VOID'],
-            size: ['BIG', 'SMALL', 'HUGE', 'TINY', 'VAST', 'MINUTE', 'MEDIUM', 'GONE'],
-            state: ['HOT', 'COLD', 'WARM', 'COOL', 'FROZEN', 'MELTED', 'SOLID', 'LIQUID']
+            colors: ['RED', 'BLUE', 'GREEN', 'CRIMSON', 'AZURE', 'VIOLET', 'SCARLET', 'INDIGO'],
+            shapes: ['CIRCLE', 'SQUARE', 'TRIANGLE', 'SPHERE', 'CUBE', 'PYRAMID', 'HELIX', 'TORUS'],
+            quantum: ['QUARK', 'LEPTON', 'PHOTON', 'BOSON', 'FERMION', 'HADRON', 'MESON', 'BARYON'],
+            abstract: ['ONE', 'TWO', 'THREE', 'INFINITY', 'ZERO', 'NULL', 'VOID', 'ALL'],
+            temporal: ['NOW', 'THEN', 'SOON', 'NEVER', 'ALWAYS', 'ONCE', 'TWICE', 'ETERNAL'],
+            size: ['GIANT', 'DWARF', 'VAST', 'TINY', 'MACRO', 'MICRO', 'MEGA', 'NANO'],
+            state: ['LIGHT', 'SHADOW', 'SOLID', 'LIQUID', 'PLASMA', 'VOID', 'FLUX', 'STATIC'],
+            logic: ['YES', 'NO', 'MAYBE', 'TRUE', 'FALSE', 'BOTH', 'NEITHER', 'ALL'],
+            flow: ['STREAM', 'CURRENT', 'WAVE', 'PULSE', 'FLOW', 'SURGE', 'DRIFT', 'CASCADE'],
+            distance: ['NEAR', 'FAR', 'HERE', 'THERE', 'BETWEEN', 'BEYOND', 'WITHIN', 'WITHOUT']
         };
 
-        // Recursive operation variants (15+ unique terms)
-        this.recursiveVariants = [
-            'recursively', 'spirally', 'cyclically', 'echoing', 'cascading',
-            'looping', 'reverberating', 'oscillating', 'fractally', 'helically',
-            'vortexing', 'iteratively', 'undulating', 'pulsating', 'rippling'
+        // Mediator gemstones (cross-linked cascades)
+        this.mediators = ['AMBER', 'TOPAZ', 'RUBY', 'EMERALD', 'SAPPHIRE', 'DIAMOND', 'OPAL', 
+                         'JADE', 'PEARL', 'ONYX', 'QUARTZ', 'AMETHYST', 'CRYSTAL', 'OBSIDIAN'];
+
+        // Spatial-temporal operations
+        this.operations = {
+            spatial: ['folds', 'spirals', 'vaults', 'twists', 'arcs', 'curls', 'pivots', 'rebounds'],
+            temporal: ['accelerates', 'decelerates', 'oscillates', 'delays', 'rushes', 'freezes', 'loops', 'cascades'],
+            quantum: ['entangles', 'collapses', 'superimposes', 'tunnels', 'diffracts', 'interferes', 'coheres', 'phases'],
+            transform: ['merges', 'splits', 'doubles', 'halves', 'segments', 'fragments', 'unifies', 'divides'],
+            ontological: ['contains', 'excludes', 'penetrates', 'exits', 'enters', 'surrounds', 'embeds', 'projects']
+        };
+
+        // Directional systems (orthogonal axes)
+        this.directions = {
+            cardinal: ['NORTH', 'SOUTH', 'EAST', 'WEST'],
+            diagonal: ['NORTHEAST', 'NORTHWEST', 'SOUTHEAST', 'SOUTHWEST'],
+            vertical: ['above', 'below', 'ascending', 'descending'],
+            relational: ['inside', 'outside', 'through', 'around'],
+            temporal: ['before', 'after', 'during', 'between']
+        };
+
+        // Ontological states (for conflicts)
+        this.ontologicalPairs = [
+            ['inside', 'outside'],
+            ['above', 'below'],
+            ['before', 'after'],
+            ['expanding', 'contracting'],
+            ['folding', 'unfolding'],
+            ['approaching', 'retracting']
         ];
 
-        // Spatial directions
-        this.spatialDirections = {
-            cardinal: ['north', 'south', 'east', 'west'],
-            diagonal: ['northeast', 'northwest', 'southeast', 'southwest'],
-            vertical: ['upward', 'downward'],
-            dimensional: ['inward', 'outward'],
-            rotational: ['clockwise', 'counter-clockwise'],
-            special: ['perpendicular', 'parallel', 'diagonal']
-        };
+        // Quantitative operations
+        this.quantitative = ['doubling', 'halving', 'tripling', 'quartering', 'merging', 'splitting'];
 
-        // Compound verb mappings for spatial operations
-        this.spatialVerbs = {
-            movement: ['falls', 'rises', 'moves', 'shifts', 'glides', 'slides'],
-            transformation: ['becomes', 'morphs', 'transforms', 'changes', 'evolves', 'mutates'],
-            geometric: ['squares', 'circles', 'triangulates', 'angles', 'curves', 'straightens'],
-            quantity: ['doubles', 'halves', 'triples', 'quarters', 'multiplies', 'divides'],
-            tempo: ['slows', 'speeds', 'accelerates', 'decelerates', 'rushes', 'delays'],
-            state: ['enters', 'exits', 'opens', 'closes', 'starts', 'stops'],
-            logic: ['negates', 'affirms', 'confirms', 'denies', 'validates', 'invalidates'],
-            size: ['shrinks', 'grows', 'expands', 'contracts', 'enlarges', 'diminishes'],
-            distance: ['approaches', 'distances', 'nears', 'furthers', 'reaches', 'withdraws']
-        };
-
-        // Spatial inverse types
-        this.inverseTypes = [
-            'east-inverse', 'west-inverse', 'north-inverse', 'south-inverse',
-            'diagonal-inverse', 'vertical-inverse', 'horizontal-inverse',
-            'rotational-inverse', 'perpendicular-inverse', 'parallel-inverse',
-            'bidirectional-inverse', 'omnidirectional-inverse', 
-            'temporal-spatial-inverse', 'dimensional-inverse', 'counter-inverse'
-        ];
-
-        // Terminal transformation states
-        this.terminalStates = {
-            colors: ['WHITE', 'BLACK', 'VOID', 'NULL', 'CLEAR'],
-            spatial: ['NOWHERE', 'EVERYWHERE', 'HERE', 'THERE', 'BEYOND'],
-            temporal: ['NEVER', 'ALWAYS', 'FOREVER', 'ONCE', 'NOW'],
-            logical: ['NULL', 'INFINITE', 'UNDEFINED', 'ABSOLUTE', 'NOTHING'],
-            state: ['GONE', 'STILL', 'FREEZE', 'VANISHED', 'COMPLETE'],
-            quantity: ['ZERO', 'INFINITY', 'ONE', 'ALL', 'NONE']
-        };
-
-        // Pattern tracking to prevent repetition
-        this.usedPatterns = [];
-        this.lastRecursiveIndex = -1;
-        this.lastSpatialPairs = [];
-        this.lastInverseType = '';
+        // Track semantic evolution
+        this.trialHistory = [];
+        this.lastMediatorIndex = -1;
+        this.usedPatterns = new Set();
     }
 
-    // Generate premise based on difficulty level
-    generatePremise(difficulty, trialNum, nBackLevel) {
-        if (difficulty <= 2) {
-            return this.generateSimple(trialNum);
-        } else if (difficulty <= 4) {
-            return this.generateIntermediate(trialNum);
-        } else if (difficulty <= 6) {
-            return this.generateAdvanced(trialNum, nBackLevel);
-        } else if (difficulty <= 8) {
-            return this.generateUltra(trialNum, nBackLevel);
-        } else {
-            return this.generateMaximal(trialNum, nBackLevel);
+    // Generate multi-dimensional premise based on difficulty
+    generatePremise(difficulty, trialNum, nBackLevel, statementCount = 1) {
+        const premises = [];
+        
+        for (let i = 0; i < statementCount; i++) {
+            const premise = this.generateSinglePremise(difficulty, trialNum + i, nBackLevel, i);
+            premises.push(premise);
         }
+        
+        return premises;
     }
 
-    // Simple premise (difficulty 1-2)
-    generateSimple(trial) {
-        const colors = this.entities.colors;
-        const [E1, E2] = this.selectUniqueEntities(colors, 2);
-        const dir = this.spatialDirections.cardinal[trial % 4];
-        return `${E1} is ${dir} of ${E2}.`;
-    }
-
-    // Intermediate premise (difficulty 3-4)
-    generateIntermediate(trial) {
-        const shapes = this.entities.shapes;
-        const [E1, E2, E3] = this.selectUniqueEntities(shapes, 3);
-        const dir = this.spatialDirections.cardinal[trial % 4];
-        const verb = this.spatialVerbs.transformation[trial % 6];
-        return `${E1} ${dir}-${verb} ${E2} through ${E3}.`;
-    }
-
-    // Advanced premise (difficulty 5-6)
-    generateAdvanced(trial, nback) {
-        const entities = [...this.entities.spatial, ...this.entities.numbers];
-        const [E1, E2, E3, E4] = this.selectUniqueEntities(entities, 4);
+    generateSinglePremise(difficulty, seed, nBackLevel, statementIndex) {
+        // Select unique entities from different pools for multi-nodal integration
+        const poolKeys = Object.keys(this.entities);
+        const pool1 = this.entities[poolKeys[seed % poolKeys.length]];
+        const pool2 = this.entities[poolKeys[(seed + 3) % poolKeys.length]];
         
-        const recursive = this.selectUniqueRecursive(trial);
-        const dir1 = this.spatialDirections.cardinal[trial % 4];
-        const verb1 = this.spatialVerbs.movement[trial % 6];
-        const dir2 = this.getOppositeDirection(dir1);
-        const verb2 = this.spatialVerbs.state[trial % 6];
+        const E1 = pool1[seed % pool1.length];
+        const E2 = pool2[(seed + 7) % pool2.length];
         
-        return `${E1} ${recursive} ${dir1}-${verb1} ${E2} ${dir2}-${verb2} ${E3} via ${E4}.`;
-    }
-
-    // Ultra premise (difficulty 7-8)
-    generateUltra(trial, nback) {
-        const entities = [...this.entities.temporal, ...this.entities.speed];
-        const [E1, E2, E3] = this.selectUniqueEntities(entities, 3);
-        const terminal = this.selectTerminalState('temporal');
+        // Select mediator (avoiding repetition)
+        const mediator = this.selectMediator(seed);
         
-        const recursive = this.selectUniqueRecursive(trial);
-        const dir1 = this.spatialDirections.diagonal[trial % 4];
-        const verb1 = this.spatialVerbs.tempo[trial % 6];
-        const dir2 = this.getOppositeDirection(dir1);
-        const verb2 = this.getCounterVerb(verb1, 'tempo');
-        const inverseType = this.selectInverseType(trial);
-        const dir3 = this.spatialDirections.cardinal[trial % 4];
-        const verb3 = this.spatialVerbs.state[trial % 6];
-        
-        return `${E1} ${recursive} ${dir1}-${verb1} ${E2} ${dir2}-${verb2} ${E1} via ${E3}'s ${inverseType} ${dir3}-${verb3} ${terminal}.`;
-    }
-
-    // MAXIMAL PREMISE - Full 10-dimensional tracking (difficulty 9-10)
-    generateMaximal(trial, nback) {
-        // Select entities from appropriate pools
-        const poolIndex = trial % 9;
-        const poolNames = Object.keys(this.entities);
-        const primaryPool = this.entities[poolNames[poolIndex]];
-        const secondaryPool = this.entities[poolNames[(poolIndex + 1) % 9]];
-        
-        // Select 4 unique entities (E1 appears 3 times)
-        const [E1, E2] = this.selectUniqueEntities(primaryPool, 2);
-        const [E3] = this.selectUniqueEntities(secondaryPool, 1);
-        
-        // 1. Select unique recursive variant (Dimension 1)
-        const recursive = this.selectUniqueRecursive(trial);
-        
-        // 2-3. Build spatial-verb compound 1 (Dimensions 2-3)
-        const spatialType1 = trial % 3 === 0 ? 'cardinal' : trial % 3 === 1 ? 'diagonal' : 'dimensional';
-        const spatial1 = this.selectSpatialDirection(spatialType1, trial);
-        const verbCategory1 = this.selectVerbCategory(spatial1);
-        const verb1 = this.selectVerb(verbCategory1, trial);
-        const compound1 = `${spatial1}-${verb1}`;
-        
-        // 4. Target entity (Dimension 4) - E2
-        
-        // 5. Build counter-spatial compound (Dimension 5)
-        const spatial2 = this.getOppositeDirection(spatial1);
-        const verb2 = this.getCounterVerb(verb1, verbCategory1);
-        const compound2 = `${spatial2}-${verb2}`;
-        
-        // 6. Self-reference (Dimension 6) - E1 again
-        
-        // 7. Mediator entity (Dimension 7) - E3
-        
-        // 8. Select spatial inverse type (Dimension 8)
-        const inverseType = this.selectInverseType(trial);
-        
-        // 9. Build final compound (Dimension 9)
-        const spatial3 = this.selectCompatibleDirection(spatial1, trial);
-        const verbCategory3 = this.selectVerbCategory(spatial3);
-        const verb3 = this.selectVerb(verbCategory3, trial + 7);
-        const compound3 = `${spatial3}-${verb3}`;
-        
-        // 10. Select terminal state (Dimension 10)
-        const terminalCategory = this.selectTerminalCategory(verb3);
-        const terminal = this.selectTerminalState(terminalCategory);
-        
-        // Construct the complete 10-dimensional premise
-        const premise = `${E1} ${recursive} ${compound1} ${E2} ${compound2} ${E1} via ${E3}'s ${inverseType} ${compound3} ${terminal}.`;
-        
-        // Store pattern to prevent repetition
-        this.storePattern(recursive, compound1, compound2, inverseType);
-        
-        return premise;
-    }
-
-    // Helper methods for maximal premise generation
-    selectUniqueEntities(pool, count) {
-        const shuffled = [...pool].sort(() => Math.random() - 0.5);
-        return shuffled.slice(0, count);
-    }
-
-    selectUniqueRecursive(trial) {
-        // Ensure no repetition within 10 trials
-        const available = this.recursiveVariants.filter((v, i) => 
-            Math.abs(i - this.lastRecursiveIndex) > 5
-        );
-        const index = trial % available.length;
-        const selected = available[index];
-        this.lastRecursiveIndex = this.recursiveVariants.indexOf(selected);
-        return selected;
-    }
-
-    selectSpatialDirection(type, trial) {
-        const pool = this.spatialDirections[type] || this.spatialDirections.cardinal;
-        return pool[trial % pool.length];
-    }
-
-    selectVerbCategory(spatial) {
-        // Map spatial directions to appropriate verb categories
-        if (['north', 'south', 'east', 'west'].includes(spatial)) {
-            return 'movement';
-        } else if (['northeast', 'northwest', 'southeast', 'southwest'].includes(spatial)) {
-            return 'geometric';
-        } else if (['upward', 'downward'].includes(spatial)) {
-            return 'state';
-        } else if (['inward', 'outward'].includes(spatial)) {
-            return 'size';
-        } else {
-            return 'transformation';
-        }
-    }
-
-    selectVerb(category, seed) {
-        const verbs = this.spatialVerbs[category] || this.spatialVerbs.transformation;
-        return verbs[seed % verbs.length];
-    }
-
-    getOppositeDirection(dir) {
-        const opposites = {
-            'north': 'south', 'south': 'north',
-            'east': 'west', 'west': 'east',
-            'northeast': 'southwest', 'southwest': 'northeast',
-            'northwest': 'southeast', 'southeast': 'northwest',
-            'upward': 'downward', 'downward': 'upward',
-            'inward': 'outward', 'outward': 'inward',
-            'clockwise': 'counter-clockwise', 'counter-clockwise': 'clockwise'
+        let premise = '';
+        let structure = {
+            dimensions: [],
+            conflicts: [],
+            operations: [],
+            mediator: mediator
         };
-        return opposites[dir] || dir;
-    }
 
-    getCounterVerb(verb, category) {
-        const counters = {
-            'falls': 'rises', 'rises': 'falls',
-            'becomes': 'unbecoming', 'morphs': 'solidifies',
-            'squares': 'circles', 'circles': 'squares',
-            'doubles': 'halves', 'halves': 'doubles',
-            'slows': 'speeds', 'speeds': 'slows',
-            'enters': 'exits', 'exits': 'enters',
-            'negates': 'affirms', 'affirms': 'negates',
-            'shrinks': 'grows', 'grows': 'shrinks',
-            'approaches': 'distances', 'distances': 'approaches'
-        };
-        return counters[verb] || this.selectVerb(category, Math.random() * 100);
-    }
-
-    selectInverseType(trial) {
-        const available = this.inverseTypes.filter(t => t !== this.lastInverseType);
-        const selected = available[trial % available.length];
-        this.lastInverseType = selected;
-        return selected;
-    }
-
-    selectCompatibleDirection(spatial1, trial) {
-        // Select a direction that's neither the same nor opposite
-        const all = [...this.spatialDirections.cardinal, ...this.spatialDirections.diagonal];
-        const opposite = this.getOppositeDirection(spatial1);
-        const compatible = all.filter(d => d !== spatial1 && d !== opposite);
-        return compatible[trial % compatible.length] || 'perpendicular';
-    }
-
-    selectTerminalCategory(verb) {
-        if (['falls', 'rises', 'moves'].includes(verb)) return 'spatial';
-        if (['becomes', 'morphs', 'transforms'].includes(verb)) return 'colors';
-        if (['doubles', 'halves', 'multiplies'].includes(verb)) return 'quantity';
-        if (['slows', 'speeds', 'delays'].includes(verb)) return 'temporal';
-        if (['negates', 'affirms', 'validates'].includes(verb)) return 'logical';
-        if (['shrinks', 'grows', 'expands'].includes(verb)) return 'state';
-        return 'colors';
-    }
-
-    selectTerminalState(category) {
-        const states = this.terminalStates[category] || this.terminalStates.state;
-        return states[Math.floor(Math.random() * states.length)];
-    }
-
-    storePattern(recursive, compound1, compound2, inverseType) {
-        const pattern = `${recursive}|${compound1}|${compound2}|${inverseType}`;
-        this.usedPatterns.push(pattern);
-        // Keep only last 10 patterns
-        if (this.usedPatterns.length > 10) {
-            this.usedPatterns.shift();
+        // Build premise based on difficulty level
+        switch(difficulty) {
+            case 1: // Dual-state with single mediator
+                premise = this.buildLevel1(E1, E2, mediator, seed, structure);
+                break;
+            case 2: // Spatial opposition
+                premise = this.buildLevel2(E1, E2, mediator, seed, structure);
+                break;
+            case 3: // Temporal-spatial fusion
+                premise = this.buildLevel3(E1, E2, mediator, seed, structure);
+                break;
+            case 4: // Ontological conflict
+                premise = this.buildLevel4(E1, E2, mediator, seed, structure);
+                break;
+            case 5: // Quantitative scaling
+                premise = this.buildLevel5(E1, E2, mediator, seed, structure);
+                break;
+            case 6: // Multi-dimensional distortion
+                premise = this.buildLevel6(E1, E2, mediator, seed, structure);
+                break;
+            case 7: // Recursive cascades
+                premise = this.buildLevel7(E1, E2, mediator, seed, structure);
+                break;
+            case 8: // Emergent conflicts
+                premise = this.buildLevel8(E1, E2, mediator, seed, structure);
+                break;
+            case 9: // Meta-cognitive reflection
+                premise = this.buildLevel9(E1, E2, mediator, seed, structure);
+                break;
+            case 10: // Full hyper-dimensional integration
+                premise = this.buildLevel10(E1, E2, mediator, seed, structure);
+                break;
         }
-    }
 
-    // Check compatibility between two premises
-    checkCompatibility(premise1, premise2, difficulty) {
-        if (difficulty <= 4) {
-            return this.checkSimpleCompatibility(premise1, premise2);
-        } else if (difficulty <= 8) {
-            return this.checkStructuralCompatibility(premise1, premise2);
-        } else {
-            return this.checkFullDimensionalCompatibility(premise1, premise2);
+        // Ensure ≤8 words
+        const words = premise.split(' ');
+        if (words.length > 8) {
+            premise = this.compressPremise(words);
         }
-    }
 
-    checkSimpleCompatibility(p1, p2) {
-        // Basic pattern matching
-        const normalize = (p) => p.replace(/[A-Z]+/g, 'E').replace(/\d+/g, 'N');
-        return normalize(p1) === normalize(p2);
-    }
-
-    checkStructuralCompatibility(p1, p2) {
-        const extract = (p) => ({
-            hasRecursive: this.recursiveVariants.some(v => p.includes(v)),
-            spatialCount: (p.match(/-/g) || []).length,
-            hasVia: p.includes('via'),
-            hasSelfRef: p.match(/(\b[A-Z]+\b).*\1.*\1/) !== null
-        });
-        
-        const s1 = extract(p1);
-        const s2 = extract(p2);
-        
-        let matches = 0;
-        if (s1.hasRecursive === s2.hasRecursive) matches++;
-        if (s1.spatialCount === s2.spatialCount) matches++;
-        if (s1.hasVia === s2.hasVia) matches++;
-        if (s1.hasSelfRef === s2.hasSelfRef) matches++;
-        
-        return matches >= 3;
-    }
-
-    checkFullDimensionalCompatibility(p1, p2) {
-        // Extract all 10 dimensions from each premise
-        const dims1 = this.extractAllDimensions(p1);
-        const dims2 = this.extractAllDimensions(p2);
-        
-        // Check each dimension
-        const checks = [
-            dims1.hasRecursive === dims2.hasRecursive,                    // D1
-            dims1.spatialDirections.length === dims2.spatialDirections.length, // D2-3
-            dims1.entityCount === dims2.entityCount,                       // D4
-            dims1.hasCounterOperation === dims2.hasCounterOperation,       // D5
-            dims1.hasSelfReference === dims2.hasSelfReference,            // D6
-            dims1.hasMediatorEntity === dims2.hasMediatorEntity,          // D7
-            dims1.hasInverseType === dims2.hasInverseType,                // D8
-            dims1.compoundCount === dims2.compoundCount,                  // D9
-            dims1.hasTerminalState === dims2.hasTerminalState             // D10
-        ];
-        
-        const matchCount = checks.filter(c => c).length;
-        return matchCount >= 7; // Need 7/10 dimensions to match
-    }
-
-    extractAllDimensions(premise) {
         return {
-            hasRecursive: this.recursiveVariants.some(v => premise.includes(v)),
-            spatialDirections: (premise.match(/(north|south|east|west|northeast|northwest|southeast|southwest|upward|downward|inward|outward)/g) || []),
-            entityCount: (premise.match(/\b[A-Z]{2,}\b/g) || []).length,
-            hasCounterOperation: (premise.match(/(\w+)-(\w+).*(\w+)-(\w+)/g) !== null),
-            hasSelfReference: (premise.match(/(\b[A-Z]+\b).*(\b[A-Z]+\b).*\1/g) !== null),
-            hasMediatorEntity: premise.includes('via'),
-            hasInverseType: premise.includes('-inverse'),
-            compoundCount: (premise.match(/\w+-\w+/g) || []).length,
-            hasTerminalState: this.getAllTerminalStates().some(t => premise.includes(t))
+            text: premise,
+            structure: structure,
+            seed: seed
         };
     }
 
-    getAllTerminalStates() {
-        return Object.values(this.terminalStates).flat();
+    buildLevel1(E1, E2, mediator, seed, structure) {
+        // Simple dual operation: "E1 operation E2 via mediator"
+        const op = this.operations.spatial[seed % 8];
+        structure.dimensions = ['spatial'];
+        structure.operations = [op];
+        return `${E1} ${op} ${E2} via ${mediator}`;
+    }
+
+    buildLevel2(E1, E2, mediator, seed, structure) {
+        // Spatial opposition: "E1 op1 NORTH while E2 op2 SOUTH"
+        const op1 = this.operations.spatial[seed % 8];
+        const op2 = this.operations.spatial[(seed + 3) % 8];
+        const dir1 = this.directions.cardinal[0];
+        const dir2 = this.directions.cardinal[1];
+        structure.dimensions = ['spatial', 'directional'];
+        structure.operations = [op1, op2];
+        structure.conflicts = ['directional-opposition'];
+        return `${E1} ${op1} ${dir1} while ${E2} ${op2} ${dir2}`;
+    }
+
+    buildLevel3(E1, E2, mediator, seed, structure) {
+        // Temporal-spatial: "E1 op1 NOW above E2 below"
+        const op = this.operations.temporal[seed % 8];
+        const temp = 'NOW';
+        const vert1 = 'above';
+        const vert2 = 'below';
+        structure.dimensions = ['temporal', 'spatial-vertical'];
+        structure.operations = [op];
+        return `${E1} ${op} ${temp} ${vert1} ${E2} ${vert2}`;
+    }
+
+    buildLevel4(E1, E2, mediator, seed, structure) {
+        // Ontological conflict: "E1 op inside while E2 outside"
+        const op = this.operations.ontological[seed % 5];
+        const [state1, state2] = this.ontologicalPairs[seed % 6];
+        structure.dimensions = ['ontological'];
+        structure.conflicts = ['inside-outside'];
+        structure.operations = [op];
+        return `${E1} ${op} ${state1} while ${E2} ${state2}`;
+    }
+
+    buildLevel5(E1, E2, mediator, seed, structure) {
+        // Quantitative: "E1 doubles EAST E2 halves WEST"
+        const quant1 = 'doubles';
+        const quant2 = 'halves';
+        const dir1 = 'EAST';
+        const dir2 = 'WEST';
+        structure.dimensions = ['quantitative', 'directional'];
+        structure.operations = [quant1, quant2];
+        return `${E1} ${quant1} ${dir1} ${E2} ${quant2} ${dir2}`;
+    }
+
+    buildLevel6(E1, E2, mediator, seed, structure) {
+        // Multi-dimensional: "E1 folds NORTH inside E2 spirals outside"
+        const op1 = this.operations.spatial[seed % 8];
+        const op2 = this.operations.spatial[(seed + 2) % 8];
+        const dir = this.directions.cardinal[seed % 4];
+        structure.dimensions = ['spatial', 'directional', 'ontological'];
+        structure.conflicts = ['inside-outside'];
+        structure.operations = [op1, op2];
+        return `${E1} ${op1} ${dir} inside ${E2} ${op2} outside`;
+    }
+
+    buildLevel7(E1, E2, mediator, seed, structure) {
+        // Recursive cascade: "E1 spirals accelerating E2 decelerating via mediator"
+        const op1 = this.operations.spatial[seed % 8];
+        const temp1 = 'accelerating';
+        const temp2 = 'decelerating';
+        structure.dimensions = ['spatial', 'temporal', 'mediator'];
+        structure.operations = [op1, temp1, temp2];
+        return `${E1} ${op1} ${temp1} ${E2} ${temp2} via ${mediator}`;
+    }
+
+    buildLevel8(E1, E2, mediator, seed, structure) {
+        // Emergent conflicts: "E1 merges folding inside E2 splits outside"
+        const trans1 = this.operations.transform[seed % 8];
+        const spat1 = 'folding';
+        const ont1 = 'inside';
+        const trans2 = this.operations.transform[(seed + 4) % 8];
+        const ont2 = 'outside';
+        structure.dimensions = ['transform', 'spatial', 'ontological'];
+        structure.conflicts = ['merge-split', 'inside-outside', 'folding'];
+        structure.operations = [trans1, trans2, spat1];
+        return `${E1} ${trans1} ${spat1} ${ont1} ${E2} ${trans2} ${ont2}`;
+    }
+
+    buildLevel9(E1, E2, mediator, seed, structure) {
+        // Meta-cognitive: "E1 reflects E2 inverting self via mediator"
+        const op = 'reflects';
+        const meta = 'inverting';
+        const self = 'self';
+        structure.dimensions = ['meta-cognitive', 'self-referential'];
+        structure.operations = [op, meta];
+        return `${E1} ${op} ${E2} ${meta} ${self} via ${mediator}`;
+    }
+
+    buildLevel10(E1, E2, mediator, seed, structure) {
+        // Full hyper-dimensional (matching Super-SET examples)
+        // "E1 folds NORTH inside while E2 spirals outside"
+        const op1 = this.operations.spatial[seed % 8];
+        const dir1 = this.directions.cardinal[seed % 4];
+        const ont1 = this.ontologicalPairs[seed % 6][0];
+        const op2 = this.operations.spatial[(seed + 3) % 8];
+        const ont2 = this.ontologicalPairs[seed % 6][1];
+        
+        structure.dimensions = ['spatial', 'directional', 'ontological', 'parallel'];
+        structure.conflicts = ['ontological-opposition', 'spatial-divergence'];
+        structure.operations = [op1, op2];
+        
+        // Format: "E1 op1 DIR ont1 while E2 op2 ont2"
+        return `${E1} ${op1} ${dir1} ${ont1} while ${E2} ${op2} ${ont2}`;
+    }
+
+    compressPremise(words) {
+        // Compress to ≤8 words while preserving core structure
+        // Remove "while" connector if needed
+        if (words.includes('while') && words.length > 8) {
+            const filtered = words.filter(w => w !== 'while');
+            return filtered.slice(0, 8).join(' ');
+        }
+        return words.slice(0, 8).join(' ');
+    }
+
+    selectMediator(seed) {
+        // Avoid repeating recent mediators
+        const available = this.mediators.filter((m, i) => 
+            Math.abs(i - this.lastMediatorIndex) > 3
+        );
+        const selected = available[seed % available.length];
+        this.lastMediatorIndex = this.mediators.indexOf(selected);
+        return selected;
+    }
+
+    // Check deep structure compatibility
+    checkCompatibility(premises1, premises2, difficulty) {
+        const struct1 = this.extractStructure(premises1);
+        const struct2 = this.extractStructure(premises2);
+        
+        // Compute similarity across multiple dimensions
+        let matchScore = 0;
+        const weights = {
+            dimensions: 0.3,
+            operations: 0.3,
+            conflicts: 0.2,
+            patterns: 0.2
+        };
+        
+        // Check dimensional alignment
+        const dimMatch = this.computeDimensionalMatch(struct1.dimensions, struct2.dimensions);
+        matchScore += dimMatch * weights.dimensions;
+        
+        // Check operational similarity
+        const opMatch = this.computeOperationalMatch(struct1.operations, struct2.operations);
+        matchScore += opMatch * weights.operations;
+        
+        // Check conflict alignment
+        const conflictMatch = this.computeConflictMatch(struct1.conflicts, struct2.conflicts);
+        matchScore += conflictMatch * weights.conflicts;
+        
+        // Check pattern structure
+        const patternMatch = this.computePatternMatch(struct1.pattern, struct2.pattern);
+        matchScore += patternMatch * weights.patterns;
+        
+        // Threshold varies by difficulty
+        const threshold = 0.5 + (difficulty * 0.03); // 0.5 to 0.8
+        return matchScore >= threshold;
+    }
+
+    extractStructure(premises) {
+        const premiseArray = Array.isArray(premises) ? premises : [premises];
+        let combined = {
+            dimensions: new Set(),
+            operations: [],
+            conflicts: [],
+            pattern: ''
+        };
+        
+        for (const p of premiseArray) {
+            const text = p.text || p;
+            
+            // Extract dimensions
+            if (text.match(/NORTH|SOUTH|EAST|WEST/)) combined.dimensions.add('directional');
+            if (text.match(/above|below|inside|outside/)) combined.dimensions.add('ontological');
+            if (text.match(/NOW|THEN|accelerat|decelerat/)) combined.dimensions.add('temporal');
+            if (text.match(/doubl|halv|merg|split/)) combined.dimensions.add('quantitative');
+            if (text.match(/fold|spiral|vault|twist|arc|curl/)) combined.dimensions.add('spatial');
+            
+            // Extract operations
+            const ops = text.match(/\b(fold|spiral|vault|twist|arc|curl|pivot|rebound|accelerat|decelerat|merg|split|doubl|halv)\w*/g);
+            if (ops) combined.operations.push(...ops);
+            
+            // Extract conflicts
+            if (text.includes('inside') && text.includes('outside')) combined.conflicts.push('inside-outside');
+            if (text.includes('above') && text.includes('below')) combined.conflicts.push('above-below');
+            if (text.includes('NORTH') && text.includes('SOUTH')) combined.conflicts.push('north-south');
+            if (text.includes('EAST') && text.includes('WEST')) combined.conflicts.push('east-west');
+            
+            // Build pattern signature
+            if (p.structure) {
+                combined.pattern += `[${p.structure.dimensions.length}D]`;
+            }
+        }
+        
+        combined.dimensions = Array.from(combined.dimensions);
+        return combined;
+    }
+
+    computeDimensionalMatch(dims1, dims2) {
+        if (!dims1.length || !dims2.length) return 0;
+        const intersection = dims1.filter(d => dims2.includes(d)).length;
+        const union = new Set([...dims1, ...dims2]).size;
+        return intersection / union;
+    }
+
+    computeOperationalMatch(ops1, ops2) {
+        if (!ops1.length || !ops2.length) return 0;
+        // Check for similar operation types
+        const types1 = this.classifyOperations(ops1);
+        const types2 = this.classifyOperations(ops2);
+        const commonTypes = types1.filter(t => types2.includes(t)).length;
+        return commonTypes / Math.max(types1.length, types2.length);
+    }
+
+    computeConflictMatch(conf1, conf2) {
+        if (!conf1.length && !conf2.length) return 1; // Both have no conflicts
+        if (!conf1.length || !conf2.length) return 0; // One has conflicts, other doesn't
+        const common = conf1.filter(c => conf2.includes(c)).length;
+        return common / Math.max(conf1.length, conf2.length);
+    }
+
+    computePatternMatch(pat1, pat2) {
+        if (pat1 === pat2) return 1;
+        if (!pat1 || !pat2) return 0;
+        // Fuzzy match based on pattern similarity
+        const dims1 = (pat1.match(/\d/g) || []).map(Number);
+        const dims2 = (pat2.match(/\d/g) || []).map(Number);
+        if (!dims1.length || !dims2.length) return 0;
+        const avgDiff = Math.abs(dims1[0] - dims2[0]) / 10;
+        return Math.max(0, 1 - avgDiff);
+    }
+
+    classifyOperations(ops) {
+        const types = [];
+        for (const op of ops) {
+            if (['fold', 'spiral', 'vault', 'twist', 'arc', 'curl'].some(s => op.includes(s))) {
+                types.push('spatial');
+            } else if (['accelerat', 'decelerat', 'delay', 'rush'].some(s => op.includes(s))) {
+                types.push('temporal');
+            } else if (['doubl', 'halv', 'tripl', 'quart'].some(s => op.includes(s))) {
+                types.push('quantitative');
+            } else if (['merg', 'split', 'segment', 'unif'].some(s => op.includes(s))) {
+                types.push('transform');
+            }
+        }
+        return [...new Set(types)];
     }
 }
 
 /* ===== Global state ===== */
-const premiseGenerator = new MaximalGLoadPremiseGenerator();
-let DIFF=1, MAX=200, RATE=25, N=1, SPEAK=true, SOLVE_WINDOW=5.0;
+const premiseGenerator = new HyperDensePremiseGenerator();
+let DIFF=1, MAX=200, RATE=25, N=1, SPEAK=true, SOLVE_WINDOW=5.0, STATEMENTS=1;
 let SESSION_CFG=null;
 
 /* ===== Apply difficulty settings ===== */
@@ -486,28 +509,22 @@ function applyDifficulty(d){
   DIFF=d;
   setText('diffVal', d);
   
-  let modeText = '';
-  let gLoad = '';
+  const difficultyLevels = {
+    1: { name: 'Dual-State', gLoad: '~0.60', desc: 'Single mediator' },
+    2: { name: 'Spatial Opposition', gLoad: '~0.65', desc: 'Directional conflict' },
+    3: { name: 'Temporal-Spatial', gLoad: '~0.70', desc: 'Time-space fusion' },
+    4: { name: 'Ontological Conflict', gLoad: '~0.75', desc: 'Inside/outside paradox' },
+    5: { name: 'Quantitative Scaling', gLoad: '~0.80', desc: 'Numeric transformations' },
+    6: { name: 'Multi-Dimensional', gLoad: '~0.85', desc: 'Combined distortions' },
+    7: { name: 'Recursive Cascades', gLoad: '~0.90', desc: 'Propagating mediators' },
+    8: { name: 'Emergent Conflicts', gLoad: '~0.95', desc: 'Multi-layer paradoxes' },
+    9: { name: 'Meta-Cognitive', gLoad: '~0.98', desc: 'Self-referential loops' },
+    10: { name: 'Hyper-Dimensional', gLoad: '~1.00+', desc: 'Full integration' }
+  };
   
-  if(d <= 2) { 
-    modeText = 'Standard Mode'; 
-    gLoad = '~0.60';
-  } else if(d <= 4) { 
-    modeText = 'Intermediate Mode'; 
-    gLoad = '~0.70';
-  } else if(d <= 6) { 
-    modeText = 'Advanced Mode'; 
-    gLoad = '~0.80';
-  } else if(d <= 8) { 
-    modeText = 'Ultra Mode'; 
-    gLoad = '~0.88';
-  } else { 
-    modeText = 'Maximum Mode'; 
-    gLoad = '~0.92+';
-  }
-  
-  $('diffExplain').textContent = `${modeText} • G-Load: ${gLoad}`;
-  $('modeLine').textContent = `Mode: ${modeText} • G-Load: ${gLoad} • N=${N}`;
+  const level = difficultyLevels[d];
+  $('diffExplain').textContent = `Level ${d}: ${level.name} • G-Load: ${level.gLoad}`;
+  $('modeLine').textContent = `Level ${d}: ${level.name} • G-Load: ${level.gLoad} • N=${N}`;
 }
 
 /* ===== Session management ===== */
@@ -524,8 +541,44 @@ function planSequence(){
   for(let i=0;i<k;i++) planned[elig[i]]=true; 
 }
 
-function showPremise(text){ 
-  $('premiseText').textContent=text; 
+function showPremises(premises) {
+  const container = $('premiseContainer');
+  container.innerHTML = '';
+  
+  const premiseArray = Array.isArray(premises) ? premises : [premises];
+  
+  premiseArray.forEach((premise, i) => {
+    const div = document.createElement('div');
+    div.className = 'premise-line';
+    
+    if (typeof premise === 'object' && premise.text) {
+      // Apply color coding for different elements
+      let text = premise.text;
+      // Highlight directions
+      text = text.replace(/\b(NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b/g, 
+                         '<span style="color:#ff9f43">$1</span>');
+      // Highlight ontological states
+      text = text.replace(/\b(inside|outside|above|below|before|after)\b/g, 
+                         '<span class="conflict-marker">$1</span>');
+      // Highlight mediators
+      text = text.replace(/\b(AMBER|TOPAZ|RUBY|EMERALD|SAPPHIRE|DIAMOND|OPAL|JADE|PEARL|ONYX|QUARTZ|AMETHYST|CRYSTAL|OBSIDIAN)\b/g,
+                         '<span style="color:#a29bfe">$1</span>');
+      
+      div.innerHTML = text;
+      
+      // Add dimension info
+      if (premise.structure && premise.structure.dimensions) {
+        const info = document.createElement('div');
+        info.className = 'dimension-info';
+        info.textContent = `[${premise.structure.dimensions.join(', ')}]`;
+        div.appendChild(info);
+      }
+    } else {
+      div.textContent = premise;
+    }
+    
+    container.appendChild(div);
+  });
 }
 
 function updateUI(){ 
@@ -540,11 +593,16 @@ function updateUI(){
 async function speak(text){
   if(!SPEAK) return Promise.resolve();
   if(typeof window==='undefined'||!('speechSynthesis' in window)) return Promise.resolve();
+  
+  const speakText = Array.isArray(text) ? 
+    text.map(p => p.text || p).join('. ') : 
+    (text.text || text);
+    
   return new Promise(res=>{ 
     try{ 
-      const u=new SpeechSynthesisUtterance(text); 
+      const u=new SpeechSynthesisUtterance(speakText); 
       u.lang='en-GB'; 
-      u.rate=1.0; 
+      u.rate=0.95; // Slightly slower for complex content
       u.pitch=1.0; 
       u.volume=1.0; 
       u.onend=()=>res(); 
@@ -589,33 +647,34 @@ function evaluateAndAdvance(){
 function runTrial(){
   if(!SESSION.running || SESSION.paused) return;
   
-  let premise;
   const mustMatch=(idx>=N)&&planned[idx];
-
-  if(mustMatch && idx >= N){
-    // Generate a matching premise by using same structure as n-back
-    const basePremise = history[idx-N];
-    // For true match, replicate structure but may vary entities
-    const matchingPremise = premiseGenerator.generatePremise(DIFF, idx, N);
-    premise = { text: matchingPremise, baseText: basePremise.text };
-  } else {
-    // Generate new premise
-    premise = { text: premiseGenerator.generatePremise(DIFF, idx, N) };
-  }
-
-  history[idx] = premise;
-  showPremise(premise.text); 
+  
+  // Generate multi-dimensional premises
+  const premises = premiseGenerator.generatePremise(DIFF, idx, N, STATEMENTS);
+  
+  history[idx] = premises;
+  showPremises(premises); 
   responded=false; 
   
-  // Determine truth based on structural compatibility
+  // Determine truth based on deep structure compatibility
   if(idx >= N) {
-    const currentPremise = premise.text;
-    const nBackPremise = history[idx-N].text;
-    currentTruth = premiseGenerator.checkCompatibility(currentPremise, nBackPremise, DIFF);
+    const currentPremises = premises;
+    const nBackPremises = history[idx-N];
+    currentTruth = premiseGenerator.checkCompatibility(currentPremises, nBackPremises, DIFF);
     
-    // Override with planned match status for consistency
-    if(mustMatch) {
+    // For planned matches, ensure compatibility
+    if(mustMatch && !currentTruth) {
+      // Force regeneration with matching structure
+      const matchingPremises = premiseGenerator.generatePremise(DIFF, idx-N, N, STATEMENTS);
+      history[idx] = matchingPremises;
+      showPremises(matchingPremises);
       currentTruth = true;
+    } else if (!mustMatch && currentTruth) {
+      // Ensure non-match by altering structure
+      const alteredPremises = premiseGenerator.generatePremise(DIFF, idx+1000, N, STATEMENTS);
+      history[idx] = alteredPremises;
+      showPremises(alteredPremises);
+      currentTruth = false;
     }
   } else {
     currentTruth = false;
@@ -624,7 +683,7 @@ function runTrial(){
   setText('isMatch','—'); 
   setText('ptype', (idx<MAX && idx>=N && planned[idx])?'MATCH':'NON-match');
 
-  speak(premise.text).then(()=>{ 
+  speak(premises).then(()=>{ 
     scheduleCountdown(SOLVE_WINDOW); 
     if(solveTimer) clearTimeout(solveTimer); 
     solveTimer=setTimeout(()=>{ 
@@ -639,12 +698,13 @@ function start(){
   MAX=+$('trials').value||200; 
   RATE=+$('rate').value||25; 
   N=+$('nback').value||1; 
+  STATEMENTS=+$('statements').value||1;
   SPEAK=!!$('speakEnabled').checked;
   SOLVE_WINDOW=+($('solveWindow').value||5); 
   setText('solveLabel', SOLVE_WINDOW.toFixed(1)); 
   setText('solveVal', SOLVE_WINDOW.toFixed(1)+'s');
 
-  SESSION_CFG={ DIFF, N, MAX, RATE, SOLVE_WINDOW };
+  SESSION_CFG={ DIFF, N, MAX, RATE, SOLVE_WINDOW, STATEMENTS };
 
   idx=0; 
   correct=0; 
@@ -695,7 +755,7 @@ function togglePause(){
 
 function reset(){ 
   stop(); 
-  $('premiseText').textContent='—'; 
+  $('premiseContainer').innerHTML='—'; 
   setText('idx',0); 
   setText('corr',0); 
   setText('err',0); 
@@ -743,7 +803,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if(!SESSION.running){ 
       N=+e.target.value; 
       setText('nVal',N); 
-      $('modeLine').textContent=$('modeLine').textContent.replace(/N=\d+$/,`N=${N}`); 
+      const currentText = $('modeLine').textContent;
+      $('modeLine').textContent=currentText.replace(/N=\d+$/,`N=${N}`); 
+    } 
+  };
+  
+  $('statements').oninput=e=>{ 
+    if(!SESSION.running){ 
+      STATEMENTS=+e.target.value; 
+      setText('stmtVal',STATEMENTS); 
     } 
   };
   
@@ -781,6 +849,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   });
 
   setText('nVal',N); 
+  setText('stmtVal',STATEMENTS);
   setText('tVal',MAX); 
   setText('rVal',RATE+'%');
   updateUI();
