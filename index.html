@@ -1,1 +1,859 @@
-.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hyper-Dense Relational N-Back — Maximum G-Load (1.0+ g)</title>
+<style>
+:root { --bg:#0b0d10; --fg:#e6fbff; --a:#00ccff; --mut:#8fe7ff }
+*{ box-sizing:border-box }
+html,body{ height:100% }
+body{ margin:0; background:#0b0d10; color:#e6fbff; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif }
+.wrap{ max-width:1280px; margin:0 auto; padding:16px }
+.row{ display:flex; gap:12px; flex-wrap:wrap }
+.col{ flex:1 1 360px }
+.box{ background:#101418; border:1px solid rgba(0,200,255,.25); border-radius:14px; padding:12px }
+.title{ font-weight:800; margin-bottom:6px; letter-spacing:.3px }
+.btn{ background:#0b0d10; color:#00ccff; border:1px solid #00ccff; border-radius:10px; padding:10px 14px; font-weight:700; cursor:pointer }
+.btn:disabled{ opacity:.5; cursor:not-allowed }
+label{ font-size:12px; color:#8fe7ff; display:block; margin:6px 0 }
+input[type=range], input[type=number]{ width:100% }
+.kbd{ border:1px solid rgba(255,255,255,.25); padding:2px 6px; border-radius:6px; background:#0b0d10 }
+.mut{ color:#8fe7ff; font-size:12px }
+hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
+#premiseContainer{ margin-top:12px; min-height:140px; background:#0e1113; border:1px solid rgba(0,200,255,.25); border-radius:12px; padding:12px; font-size:20px; line-height:1.8; word-break:break-word }
+.premise-line{ margin:8px 0; padding:6px 0; border-bottom:1px solid rgba(0,200,255,.15); font-family:'Courier New',monospace; letter-spacing:1px }
+.premise-line:last-child{ border-bottom:none; }
+.badge{ display:inline-block; padding:2px 8px; border:1px solid rgba(0,200,255,.35); border-radius:999px; font-size:12px; color:#8fe7ff; margin-left:6px }
+#countdown{ font-weight:800; color:#00ccff }
+.dimension-info{ font-size:10px; color:#4a8aff; margin-top:4px; opacity:0.7 }
+.conflict-marker{ color:#ff6b6b; font-weight:bold }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <div class="col">
+      <div class="box">
+        <div class="title">Difficulty & N-Back</div>
+        <label>Difficulty (1–10): <span id="diffVal">1</span></label>
+        <input id="difficulty" type="range" min="1" max="10" step="1" value="1">
+        <div class="mut" id="diffExplain">Level 1: Dual-State • G-Load: ~0.60</div>
+        <hr class="hr">
+        <label>N-Back level: <span id="nVal">1</span></label>
+        <input id="nback" type="range" min="1" max="5" step="1" value="1">
+        <hr class="hr">
+        <label>Statements per trial: <span id="stmtVal">1</span></label>
+        <input id="statements" type="range" min="1" max="5" step="1" value="1">
+        <div class="mut small">Multiple statements create cascading dependencies</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="box">
+        <div class="title">Timing & Block</div>
+        <div class="mut">Solve window: <strong><span id="solveLabel">5.0</span>s</strong> after speaking.</div>
+        <label>Solve window (1–30s): <span id="solveVal">5.0s</span></label>
+        <input id="solveWindow" type="range" min="1" max="30" step="0.1" value="5">
+        <label>Trials per block: <span id="tVal">200</span></label>
+        <input id="trials" type="range" min="20" max="500" step="10" value="200">
+        <label>Target match rate: <span id="rVal">25%</span></label>
+        <input id="rate" type="range" min="0" max="100" step="1" value="25">
+        <label><input id="speakEnabled" type="checkbox" checked> Speak sentences</label>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="box">
+        <div class="title">Controls / Status</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px">
+          <button id="start" class="btn">▶ Start</button>
+          <button id="pause" class="btn" disabled>⏸ Pause</button>
+          <button id="reset" class="btn" disabled>🔄 Reset</button>
+          <button id="hit" class="btn" disabled>✓ Match (<span class="kbd">Space</span>)</button>
+          <button id="skip" class="btn" disabled>⏭ Skip</button>
+        </div>
+        <div class="mut" style="margin-top:8px">
+          Trial <span id="idx">0</span>/<span id="max">200</span>
+          <span class="badge">Planned: <span id="ptype">—</span></span>
+          <span class="badge">Actual: <span id="isMatch">—</span></span>
+          <span class="badge">Countdown: <span id="countdown">—</span></span>
+        </div>
+        <div class="mut">Correct: <span id="corr">0</span> • Errors: <span id="err">0</span></div>
+        <div class="mut small" id="modeLine">Level 1: Dual-State • G-Load: ~0.60 • N=1</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box" style="margin-top:12px">
+    <div class="title">Hyper-Dense Multi-Dimensional Premise <span class="badge">≤8 words</span></div>
+    <div id="premiseContainer" aria-live="polite">—</div>
+  </div>
+
+  <div id="log" style="display:none" aria-hidden="true">—</div>
+</div>
+
+<script>
+/* ============================================================
+   HYPER-DENSE RELATIONAL N-BACK (1.0+ g)
+   Full Super-SET implementation with multi-dimensional operations
+   ============================================================ */
+
+/* ===== Utilities ===== */
+const $ = id => document.getElementById(id);
+function setText(id,v){ const el=$(id); if(el) el.textContent=v; }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]] } return a; }
+
+/* ===== HYPER-DENSE MULTI-DIMENSIONAL PREMISE GENERATOR ===== */
+class HyperDensePremiseGenerator {
+    constructor() {
+        // Entity pools for multi-nodal integration
+        this.entities = {
+            colors: ['RED', 'BLUE', 'GREEN', 'CRIMSON', 'AZURE', 'VIOLET', 'SCARLET', 'INDIGO'],
+            shapes: ['CIRCLE', 'SQUARE', 'TRIANGLE', 'SPHERE', 'CUBE', 'PYRAMID', 'HELIX', 'TORUS'],
+            quantum: ['QUARK', 'LEPTON', 'PHOTON', 'BOSON', 'FERMION', 'HADRON', 'MESON', 'BARYON'],
+            abstract: ['ONE', 'TWO', 'THREE', 'INFINITY', 'ZERO', 'NULL', 'VOID', 'ALL'],
+            temporal: ['NOW', 'THEN', 'SOON', 'NEVER', 'ALWAYS', 'ONCE', 'TWICE', 'ETERNAL'],
+            size: ['GIANT', 'DWARF', 'VAST', 'TINY', 'MACRO', 'MICRO', 'MEGA', 'NANO'],
+            state: ['LIGHT', 'SHADOW', 'SOLID', 'LIQUID', 'PLASMA', 'VOID', 'FLUX', 'STATIC'],
+            logic: ['YES', 'NO', 'MAYBE', 'TRUE', 'FALSE', 'BOTH', 'NEITHER', 'ALL'],
+            flow: ['STREAM', 'CURRENT', 'WAVE', 'PULSE', 'FLOW', 'SURGE', 'DRIFT', 'CASCADE'],
+            distance: ['NEAR', 'FAR', 'HERE', 'THERE', 'BETWEEN', 'BEYOND', 'WITHIN', 'WITHOUT']
+        };
+
+        // Mediator gemstones (cross-linked cascades)
+        this.mediators = ['AMBER', 'TOPAZ', 'RUBY', 'EMERALD', 'SAPPHIRE', 'DIAMOND', 'OPAL', 
+                         'JADE', 'PEARL', 'ONYX', 'QUARTZ', 'AMETHYST', 'CRYSTAL', 'OBSIDIAN'];
+
+        // Spatial-temporal operations
+        this.operations = {
+            spatial: ['folds', 'spirals', 'vaults', 'twists', 'arcs', 'curls', 'pivots', 'rebounds'],
+            temporal: ['accelerates', 'decelerates', 'oscillates', 'delays', 'rushes', 'freezes', 'loops', 'cascades'],
+            quantum: ['entangles', 'collapses', 'superimposes', 'tunnels', 'diffracts', 'interferes', 'coheres', 'phases'],
+            transform: ['merges', 'splits', 'doubles', 'halves', 'segments', 'fragments', 'unifies', 'divides'],
+            ontological: ['contains', 'excludes', 'penetrates', 'exits', 'enters', 'surrounds', 'embeds', 'projects']
+        };
+
+        // Directional systems (orthogonal axes)
+        this.directions = {
+            cardinal: ['NORTH', 'SOUTH', 'EAST', 'WEST'],
+            diagonal: ['NORTHEAST', 'NORTHWEST', 'SOUTHEAST', 'SOUTHWEST'],
+            vertical: ['above', 'below', 'ascending', 'descending'],
+            relational: ['inside', 'outside', 'through', 'around'],
+            temporal: ['before', 'after', 'during', 'between']
+        };
+
+        // Ontological states (for conflicts)
+        this.ontologicalPairs = [
+            ['inside', 'outside'],
+            ['above', 'below'],
+            ['before', 'after'],
+            ['expanding', 'contracting'],
+            ['folding', 'unfolding'],
+            ['approaching', 'retracting']
+        ];
+
+        // Quantitative operations
+        this.quantitative = ['doubling', 'halving', 'tripling', 'quartering', 'merging', 'splitting'];
+
+        // Track semantic evolution
+        this.trialHistory = [];
+        this.lastMediatorIndex = -1;
+        this.usedPatterns = new Set();
+    }
+
+    // Generate multi-dimensional premise based on difficulty
+    generatePremise(difficulty, trialNum, nBackLevel, statementCount = 1) {
+        const premises = [];
+        
+        for (let i = 0; i < statementCount; i++) {
+            const premise = this.generateSinglePremise(difficulty, trialNum + i, nBackLevel, i);
+            premises.push(premise);
+        }
+        
+        return premises;
+    }
+
+    generateSinglePremise(difficulty, seed, nBackLevel, statementIndex) {
+        // Select unique entities from different pools for multi-nodal integration
+        const poolKeys = Object.keys(this.entities);
+        const pool1 = this.entities[poolKeys[seed % poolKeys.length]];
+        const pool2 = this.entities[poolKeys[(seed + 3) % poolKeys.length]];
+        
+        const E1 = pool1[seed % pool1.length];
+        const E2 = pool2[(seed + 7) % pool2.length];
+        
+        // Select mediator (avoiding repetition)
+        const mediator = this.selectMediator(seed);
+        
+        let premise = '';
+        let structure = {
+            dimensions: [],
+            conflicts: [],
+            operations: [],
+            mediator: mediator
+        };
+
+        // Build premise based on difficulty level
+        switch(difficulty) {
+            case 1: // Dual-state with single mediator
+                premise = this.buildLevel1(E1, E2, mediator, seed, structure);
+                break;
+            case 2: // Spatial opposition
+                premise = this.buildLevel2(E1, E2, mediator, seed, structure);
+                break;
+            case 3: // Temporal-spatial fusion
+                premise = this.buildLevel3(E1, E2, mediator, seed, structure);
+                break;
+            case 4: // Ontological conflict
+                premise = this.buildLevel4(E1, E2, mediator, seed, structure);
+                break;
+            case 5: // Quantitative scaling
+                premise = this.buildLevel5(E1, E2, mediator, seed, structure);
+                break;
+            case 6: // Multi-dimensional distortion
+                premise = this.buildLevel6(E1, E2, mediator, seed, structure);
+                break;
+            case 7: // Recursive cascades
+                premise = this.buildLevel7(E1, E2, mediator, seed, structure);
+                break;
+            case 8: // Emergent conflicts
+                premise = this.buildLevel8(E1, E2, mediator, seed, structure);
+                break;
+            case 9: // Meta-cognitive reflection
+                premise = this.buildLevel9(E1, E2, mediator, seed, structure);
+                break;
+            case 10: // Full hyper-dimensional integration
+                premise = this.buildLevel10(E1, E2, mediator, seed, structure);
+                break;
+        }
+
+        // Ensure ≤8 words
+        const words = premise.split(' ');
+        if (words.length > 8) {
+            premise = this.compressPremise(words);
+        }
+
+        return {
+            text: premise,
+            structure: structure,
+            seed: seed
+        };
+    }
+
+    buildLevel1(E1, E2, mediator, seed, structure) {
+        // Simple dual operation: "E1 operation E2 via mediator"
+        const op = this.operations.spatial[seed % 8];
+        structure.dimensions = ['spatial'];
+        structure.operations = [op];
+        return `${E1} ${op} ${E2} via ${mediator}`;
+    }
+
+    buildLevel2(E1, E2, mediator, seed, structure) {
+        // Spatial opposition: "E1 op1 NORTH while E2 op2 SOUTH"
+        const op1 = this.operations.spatial[seed % 8];
+        const op2 = this.operations.spatial[(seed + 3) % 8];
+        const dir1 = this.directions.cardinal[0];
+        const dir2 = this.directions.cardinal[1];
+        structure.dimensions = ['spatial', 'directional'];
+        structure.operations = [op1, op2];
+        structure.conflicts = ['directional-opposition'];
+        return `${E1} ${op1} ${dir1} while ${E2} ${op2} ${dir2}`;
+    }
+
+    buildLevel3(E1, E2, mediator, seed, structure) {
+        // Temporal-spatial: "E1 op1 NOW above E2 below"
+        const op = this.operations.temporal[seed % 8];
+        const temp = 'NOW';
+        const vert1 = 'above';
+        const vert2 = 'below';
+        structure.dimensions = ['temporal', 'spatial-vertical'];
+        structure.operations = [op];
+        return `${E1} ${op} ${temp} ${vert1} ${E2} ${vert2}`;
+    }
+
+    buildLevel4(E1, E2, mediator, seed, structure) {
+        // Ontological conflict: "E1 op inside while E2 outside"
+        const op = this.operations.ontological[seed % 5];
+        const [state1, state2] = this.ontologicalPairs[seed % 6];
+        structure.dimensions = ['ontological'];
+        structure.conflicts = ['inside-outside'];
+        structure.operations = [op];
+        return `${E1} ${op} ${state1} while ${E2} ${state2}`;
+    }
+
+    buildLevel5(E1, E2, mediator, seed, structure) {
+        // Quantitative: "E1 doubles EAST E2 halves WEST"
+        const quant1 = 'doubles';
+        const quant2 = 'halves';
+        const dir1 = 'EAST';
+        const dir2 = 'WEST';
+        structure.dimensions = ['quantitative', 'directional'];
+        structure.operations = [quant1, quant2];
+        return `${E1} ${quant1} ${dir1} ${E2} ${quant2} ${dir2}`;
+    }
+
+    buildLevel6(E1, E2, mediator, seed, structure) {
+        // Multi-dimensional: "E1 folds NORTH inside E2 spirals outside"
+        const op1 = this.operations.spatial[seed % 8];
+        const op2 = this.operations.spatial[(seed + 2) % 8];
+        const dir = this.directions.cardinal[seed % 4];
+        structure.dimensions = ['spatial', 'directional', 'ontological'];
+        structure.conflicts = ['inside-outside'];
+        structure.operations = [op1, op2];
+        return `${E1} ${op1} ${dir} inside ${E2} ${op2} outside`;
+    }
+
+    buildLevel7(E1, E2, mediator, seed, structure) {
+        // Recursive cascade: "E1 spirals accelerating E2 decelerating via mediator"
+        const op1 = this.operations.spatial[seed % 8];
+        const temp1 = 'accelerating';
+        const temp2 = 'decelerating';
+        structure.dimensions = ['spatial', 'temporal', 'mediator'];
+        structure.operations = [op1, temp1, temp2];
+        return `${E1} ${op1} ${temp1} ${E2} ${temp2} via ${mediator}`;
+    }
+
+    buildLevel8(E1, E2, mediator, seed, structure) {
+        // Emergent conflicts: "E1 merges folding inside E2 splits outside"
+        const trans1 = this.operations.transform[seed % 8];
+        const spat1 = 'folding';
+        const ont1 = 'inside';
+        const trans2 = this.operations.transform[(seed + 4) % 8];
+        const ont2 = 'outside';
+        structure.dimensions = ['transform', 'spatial', 'ontological'];
+        structure.conflicts = ['merge-split', 'inside-outside', 'folding'];
+        structure.operations = [trans1, trans2, spat1];
+        return `${E1} ${trans1} ${spat1} ${ont1} ${E2} ${trans2} ${ont2}`;
+    }
+
+    buildLevel9(E1, E2, mediator, seed, structure) {
+        // Meta-cognitive: "E1 reflects E2 inverting self via mediator"
+        const op = 'reflects';
+        const meta = 'inverting';
+        const self = 'self';
+        structure.dimensions = ['meta-cognitive', 'self-referential'];
+        structure.operations = [op, meta];
+        return `${E1} ${op} ${E2} ${meta} ${self} via ${mediator}`;
+    }
+
+    buildLevel10(E1, E2, mediator, seed, structure) {
+        // Full hyper-dimensional (matching Super-SET examples)
+        // "E1 folds NORTH inside while E2 spirals outside"
+        const op1 = this.operations.spatial[seed % 8];
+        const dir1 = this.directions.cardinal[seed % 4];
+        const ont1 = this.ontologicalPairs[seed % 6][0];
+        const op2 = this.operations.spatial[(seed + 3) % 8];
+        const ont2 = this.ontologicalPairs[seed % 6][1];
+        
+        structure.dimensions = ['spatial', 'directional', 'ontological', 'parallel'];
+        structure.conflicts = ['ontological-opposition', 'spatial-divergence'];
+        structure.operations = [op1, op2];
+        
+        // Format: "E1 op1 DIR ont1 while E2 op2 ont2"
+        return `${E1} ${op1} ${dir1} ${ont1} while ${E2} ${op2} ${ont2}`;
+    }
+
+    compressPremise(words) {
+        // Compress to ≤8 words while preserving core structure
+        // Remove "while" connector if needed
+        if (words.includes('while') && words.length > 8) {
+            const filtered = words.filter(w => w !== 'while');
+            return filtered.slice(0, 8).join(' ');
+        }
+        return words.slice(0, 8).join(' ');
+    }
+
+    selectMediator(seed) {
+        // Avoid repeating recent mediators
+        const available = this.mediators.filter((m, i) => 
+            Math.abs(i - this.lastMediatorIndex) > 3
+        );
+        const selected = available[seed % available.length];
+        this.lastMediatorIndex = this.mediators.indexOf(selected);
+        return selected;
+    }
+
+    // Check deep structure compatibility
+    checkCompatibility(premises1, premises2, difficulty) {
+        const struct1 = this.extractStructure(premises1);
+        const struct2 = this.extractStructure(premises2);
+        
+        // Compute similarity across multiple dimensions
+        let matchScore = 0;
+        const weights = {
+            dimensions: 0.3,
+            operations: 0.3,
+            conflicts: 0.2,
+            patterns: 0.2
+        };
+        
+        // Check dimensional alignment
+        const dimMatch = this.computeDimensionalMatch(struct1.dimensions, struct2.dimensions);
+        matchScore += dimMatch * weights.dimensions;
+        
+        // Check operational similarity
+        const opMatch = this.computeOperationalMatch(struct1.operations, struct2.operations);
+        matchScore += opMatch * weights.operations;
+        
+        // Check conflict alignment
+        const conflictMatch = this.computeConflictMatch(struct1.conflicts, struct2.conflicts);
+        matchScore += conflictMatch * weights.conflicts;
+        
+        // Check pattern structure
+        const patternMatch = this.computePatternMatch(struct1.pattern, struct2.pattern);
+        matchScore += patternMatch * weights.patterns;
+        
+        // Threshold varies by difficulty
+        const threshold = 0.5 + (difficulty * 0.03); // 0.5 to 0.8
+        return matchScore >= threshold;
+    }
+
+    extractStructure(premises) {
+        const premiseArray = Array.isArray(premises) ? premises : [premises];
+        let combined = {
+            dimensions: new Set(),
+            operations: [],
+            conflicts: [],
+            pattern: ''
+        };
+        
+        for (const p of premiseArray) {
+            const text = p.text || p;
+            
+            // Extract dimensions
+            if (text.match(/NORTH|SOUTH|EAST|WEST/)) combined.dimensions.add('directional');
+            if (text.match(/above|below|inside|outside/)) combined.dimensions.add('ontological');
+            if (text.match(/NOW|THEN|accelerat|decelerat/)) combined.dimensions.add('temporal');
+            if (text.match(/doubl|halv|merg|split/)) combined.dimensions.add('quantitative');
+            if (text.match(/fold|spiral|vault|twist|arc|curl/)) combined.dimensions.add('spatial');
+            
+            // Extract operations
+            const ops = text.match(/\b(fold|spiral|vault|twist|arc|curl|pivot|rebound|accelerat|decelerat|merg|split|doubl|halv)\w*/g);
+            if (ops) combined.operations.push(...ops);
+            
+            // Extract conflicts
+            if (text.includes('inside') && text.includes('outside')) combined.conflicts.push('inside-outside');
+            if (text.includes('above') && text.includes('below')) combined.conflicts.push('above-below');
+            if (text.includes('NORTH') && text.includes('SOUTH')) combined.conflicts.push('north-south');
+            if (text.includes('EAST') && text.includes('WEST')) combined.conflicts.push('east-west');
+            
+            // Build pattern signature
+            if (p.structure) {
+                combined.pattern += `[${p.structure.dimensions.length}D]`;
+            }
+        }
+        
+        combined.dimensions = Array.from(combined.dimensions);
+        return combined;
+    }
+
+    computeDimensionalMatch(dims1, dims2) {
+        if (!dims1.length || !dims2.length) return 0;
+        const intersection = dims1.filter(d => dims2.includes(d)).length;
+        const union = new Set([...dims1, ...dims2]).size;
+        return intersection / union;
+    }
+
+    computeOperationalMatch(ops1, ops2) {
+        if (!ops1.length || !ops2.length) return 0;
+        // Check for similar operation types
+        const types1 = this.classifyOperations(ops1);
+        const types2 = this.classifyOperations(ops2);
+        const commonTypes = types1.filter(t => types2.includes(t)).length;
+        return commonTypes / Math.max(types1.length, types2.length);
+    }
+
+    computeConflictMatch(conf1, conf2) {
+        if (!conf1.length && !conf2.length) return 1; // Both have no conflicts
+        if (!conf1.length || !conf2.length) return 0; // One has conflicts, other doesn't
+        const common = conf1.filter(c => conf2.includes(c)).length;
+        return common / Math.max(conf1.length, conf2.length);
+    }
+
+    computePatternMatch(pat1, pat2) {
+        if (pat1 === pat2) return 1;
+        if (!pat1 || !pat2) return 0;
+        // Fuzzy match based on pattern similarity
+        const dims1 = (pat1.match(/\d/g) || []).map(Number);
+        const dims2 = (pat2.match(/\d/g) || []).map(Number);
+        if (!dims1.length || !dims2.length) return 0;
+        const avgDiff = Math.abs(dims1[0] - dims2[0]) / 10;
+        return Math.max(0, 1 - avgDiff);
+    }
+
+    classifyOperations(ops) {
+        const types = [];
+        for (const op of ops) {
+            if (['fold', 'spiral', 'vault', 'twist', 'arc', 'curl'].some(s => op.includes(s))) {
+                types.push('spatial');
+            } else if (['accelerat', 'decelerat', 'delay', 'rush'].some(s => op.includes(s))) {
+                types.push('temporal');
+            } else if (['doubl', 'halv', 'tripl', 'quart'].some(s => op.includes(s))) {
+                types.push('quantitative');
+            } else if (['merg', 'split', 'segment', 'unif'].some(s => op.includes(s))) {
+                types.push('transform');
+            }
+        }
+        return [...new Set(types)];
+    }
+}
+
+/* ===== Global state ===== */
+const premiseGenerator = new HyperDensePremiseGenerator();
+let DIFF=1, MAX=200, RATE=25, N=1, SPEAK=true, SOLVE_WINDOW=5.0, STATEMENTS=1;
+let SESSION_CFG=null;
+
+/* ===== Apply difficulty settings ===== */
+function applyDifficulty(d){
+  DIFF=d;
+  setText('diffVal', d);
+  
+  const difficultyLevels = {
+    1: { name: 'Dual-State', gLoad: '~0.60', desc: 'Single mediator' },
+    2: { name: 'Spatial Opposition', gLoad: '~0.65', desc: 'Directional conflict' },
+    3: { name: 'Temporal-Spatial', gLoad: '~0.70', desc: 'Time-space fusion' },
+    4: { name: 'Ontological Conflict', gLoad: '~0.75', desc: 'Inside/outside paradox' },
+    5: { name: 'Quantitative Scaling', gLoad: '~0.80', desc: 'Numeric transformations' },
+    6: { name: 'Multi-Dimensional', gLoad: '~0.85', desc: 'Combined distortions' },
+    7: { name: 'Recursive Cascades', gLoad: '~0.90', desc: 'Propagating mediators' },
+    8: { name: 'Emergent Conflicts', gLoad: '~0.95', desc: 'Multi-layer paradoxes' },
+    9: { name: 'Meta-Cognitive', gLoad: '~0.98', desc: 'Self-referential loops' },
+    10: { name: 'Hyper-Dimensional', gLoad: '~1.00+', desc: 'Full integration' }
+  };
+  
+  const level = difficultyLevels[d];
+  $('diffExplain').textContent = `Level ${d}: ${level.name} • G-Load: ${level.gLoad}`;
+  $('modeLine').textContent = `Level ${d}: ${level.name} • G-Load: ${level.gLoad} • N=${N}`;
+}
+
+/* ===== Session management ===== */
+let idx=0, correct=0, errors=0, planned=[], history=[], SESSION={running:false, paused:false};
+let currentTruth=false, responded=false, solveTimer=null, countdownTimer=null, countdownLeft=0;
+
+function planSequence(){ 
+  planned.length=MAX; 
+  for(let i=0;i<MAX;i++) planned[i]=false; 
+  const elig=[]; 
+  for(let i=N;i<MAX;i++) elig.push(i); 
+  const k=Math.round((RATE/100)*elig.length); 
+  shuffle(elig); 
+  for(let i=0;i<k;i++) planned[elig[i]]=true; 
+}
+
+function showPremises(premises) {
+  const container = $('premiseContainer');
+  container.innerHTML = '';
+  
+  const premiseArray = Array.isArray(premises) ? premises : [premises];
+  
+  premiseArray.forEach((premise, i) => {
+    const div = document.createElement('div');
+    div.className = 'premise-line';
+    
+    if (typeof premise === 'object' && premise.text) {
+      // Apply color coding for different elements
+      let text = premise.text;
+      // Highlight directions
+      text = text.replace(/\b(NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\b/g, 
+                         '<span style="color:#ff9f43">$1</span>');
+      // Highlight ontological states
+      text = text.replace(/\b(inside|outside|above|below|before|after)\b/g, 
+                         '<span class="conflict-marker">$1</span>');
+      // Highlight mediators
+      text = text.replace(/\b(AMBER|TOPAZ|RUBY|EMERALD|SAPPHIRE|DIAMOND|OPAL|JADE|PEARL|ONYX|QUARTZ|AMETHYST|CRYSTAL|OBSIDIAN)\b/g,
+                         '<span style="color:#a29bfe">$1</span>');
+      
+      div.innerHTML = text;
+      
+      // Add dimension info
+      if (premise.structure && premise.structure.dimensions) {
+        const info = document.createElement('div');
+        info.className = 'dimension-info';
+        info.textContent = `[${premise.structure.dimensions.join(', ')}]`;
+        div.appendChild(info);
+      }
+    } else {
+      div.textContent = premise;
+    }
+    
+    container.appendChild(div);
+  });
+}
+
+function updateUI(){ 
+  setText('idx', idx); 
+  setText('max', MAX); 
+  setText('ptype', (idx<MAX && idx>=N && planned[idx])?'MATCH':'NON-match'); 
+  setText('corr', correct); 
+  setText('err', errors); 
+  setText('isMatch','—'); 
+}
+
+async function speak(text){
+  if(!SPEAK) return Promise.resolve();
+  if(typeof window==='undefined'||!('speechSynthesis' in window)) return Promise.resolve();
+  
+  const speakText = Array.isArray(text) ? 
+    text.map(p => p.text || p).join('. ') : 
+    (text.text || text);
+    
+  return new Promise(res=>{ 
+    try{ 
+      const u=new SpeechSynthesisUtterance(speakText); 
+      u.lang='en-GB'; 
+      u.rate=0.95; // Slightly slower for complex content
+      u.pitch=1.0; 
+      u.volume=1.0; 
+      u.onend=()=>res(); 
+      u.onerror=()=>res(); 
+      if(window.speechSynthesis.speaking) window.speechSynthesis.cancel(); 
+      window.speechSynthesis.speak(u); 
+    }catch{ 
+      res(); 
+    } 
+  });
+}
+
+function scheduleCountdown(sec){ 
+  countdownLeft=sec; 
+  setText('countdown', countdownLeft.toFixed(1)+'s'); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  countdownTimer=setInterval(()=>{ 
+    countdownLeft=Math.max(0,countdownLeft-0.1); 
+    setText('countdown', countdownLeft.toFixed(1)+'s'); 
+    if(countdownLeft<=0){ 
+      clearInterval(countdownTimer); 
+      countdownTimer=null; 
+    } 
+  },100); 
+}
+
+function evaluateAndAdvance(){ 
+  const resp=responded, truth=currentTruth; 
+  if(resp===truth) correct++; 
+  else errors++; 
+  setText('corr',correct); 
+  setText('err',errors); 
+  setText('isMatch', String(truth).toUpperCase()); 
+  idx++; 
+  if(idx>=MAX){ 
+    stop(); 
+    return; 
+  } 
+  runTrial(); 
+}
+
+function runTrial(){
+  if(!SESSION.running || SESSION.paused) return;
+  
+  const mustMatch=(idx>=N)&&planned[idx];
+  
+  // Generate multi-dimensional premises
+  const premises = premiseGenerator.generatePremise(DIFF, idx, N, STATEMENTS);
+  
+  history[idx] = premises;
+  showPremises(premises); 
+  responded=false; 
+  
+  // Determine truth based on deep structure compatibility
+  if(idx >= N) {
+    const currentPremises = premises;
+    const nBackPremises = history[idx-N];
+    currentTruth = premiseGenerator.checkCompatibility(currentPremises, nBackPremises, DIFF);
+    
+    // For planned matches, ensure compatibility
+    if(mustMatch && !currentTruth) {
+      // Force regeneration with matching structure
+      const matchingPremises = premiseGenerator.generatePremise(DIFF, idx-N, N, STATEMENTS);
+      history[idx] = matchingPremises;
+      showPremises(matchingPremises);
+      currentTruth = true;
+    } else if (!mustMatch && currentTruth) {
+      // Ensure non-match by altering structure
+      const alteredPremises = premiseGenerator.generatePremise(DIFF, idx+1000, N, STATEMENTS);
+      history[idx] = alteredPremises;
+      showPremises(alteredPremises);
+      currentTruth = false;
+    }
+  } else {
+    currentTruth = false;
+  }
+  
+  setText('isMatch','—'); 
+  setText('ptype', (idx<MAX && idx>=N && planned[idx])?'MATCH':'NON-match');
+
+  speak(premises).then(()=>{ 
+    scheduleCountdown(SOLVE_WINDOW); 
+    if(solveTimer) clearTimeout(solveTimer); 
+    solveTimer=setTimeout(()=>{ 
+      evaluateAndAdvance(); 
+    }, SOLVE_WINDOW*1000); 
+  });
+}
+
+/* Controls */
+function start(){
+  applyDifficulty(+$('difficulty').value);
+  MAX=+$('trials').value||200; 
+  RATE=+$('rate').value||25; 
+  N=+$('nback').value||1; 
+  STATEMENTS=+$('statements').value||1;
+  SPEAK=!!$('speakEnabled').checked;
+  SOLVE_WINDOW=+($('solveWindow').value||5); 
+  setText('solveLabel', SOLVE_WINDOW.toFixed(1)); 
+  setText('solveVal', SOLVE_WINDOW.toFixed(1)+'s');
+
+  SESSION_CFG={ DIFF, N, MAX, RATE, SOLVE_WINDOW, STATEMENTS };
+
+  idx=0; 
+  correct=0; 
+  errors=0; 
+  planned=[]; 
+  history=[]; 
+  planSequence(); 
+  updateUI();
+  SESSION.running=true; 
+  SESSION.paused=false;
+  $('pause').disabled=false; 
+  $('reset').disabled=false; 
+  $('hit').disabled=false; 
+  $('skip').disabled=false;
+  runTrial();
+}
+
+function stop(){ 
+  SESSION.running=false; 
+  SESSION.paused=false; 
+  if(solveTimer) clearTimeout(solveTimer); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  setText('countdown','—'); 
+  try{ 
+    if(window.speechSynthesis) window.speechSynthesis.cancel(); 
+  }catch{} 
+}
+
+function togglePause(){
+  if(!SESSION.running) return;
+  SESSION.paused=!SESSION.paused; 
+  $('pause').textContent=SESSION.paused?'▶ Resume':'⏸ Pause';
+  if(SESSION.paused){ 
+    if(solveTimer) clearTimeout(solveTimer); 
+    if(countdownTimer) clearInterval(countdownTimer); 
+    try{ 
+      if(window.speechSynthesis) window.speechSynthesis.cancel(); 
+    }catch{} 
+  }
+  else{
+    scheduleCountdown(countdownLeft>0?countdownLeft:SOLVE_WINDOW);
+    if(solveTimer) clearTimeout(solveTimer);
+    solveTimer=setTimeout(()=>{ 
+      evaluateAndAdvance(); 
+    }, (countdownLeft>0?countdownLeft:SOLVE_WINDOW)*1000);
+  }
+}
+
+function reset(){ 
+  stop(); 
+  $('premiseContainer').innerHTML='—'; 
+  setText('idx',0); 
+  setText('corr',0); 
+  setText('err',0); 
+  setText('ptype','—'); 
+  setText('isMatch','—'); 
+}
+
+function registerHit(){ 
+  if(!SESSION.running || SESSION.paused) return; 
+  responded=true; 
+}
+
+function skip(){ 
+  if(!SESSION.running || SESSION.paused) return; 
+  if(solveTimer) clearTimeout(solveTimer); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  setText('countdown','—'); 
+  evaluateAndAdvance(); 
+}
+
+/* Event bindings */
+document.addEventListener('DOMContentLoaded', ()=>{
+  applyDifficulty(+$('difficulty').value);
+  
+  const sw=$('solveWindow'); 
+  const updateSW=()=>{ 
+    const v=+sw.value; 
+    setText('solveVal', v.toFixed(1)+'s'); 
+    setText('solveLabel', v.toFixed(1)); 
+  };
+  updateSW(); 
+  sw.oninput=e=>{ 
+    if(!SESSION.running){ 
+      updateSW(); 
+    } 
+  };
+
+  $('difficulty').oninput=e=>{ 
+    if(!SESSION.running){ 
+      applyDifficulty(+e.target.value); 
+    } 
+  };
+  
+  $('nback').oninput=e=>{ 
+    if(!SESSION.running){ 
+      N=+e.target.value; 
+      setText('nVal',N); 
+      const currentText = $('modeLine').textContent;
+      $('modeLine').textContent=currentText.replace(/N=\d+$/,`N=${N}`); 
+    } 
+  };
+  
+  $('statements').oninput=e=>{ 
+    if(!SESSION.running){ 
+      STATEMENTS=+e.target.value; 
+      setText('stmtVal',STATEMENTS); 
+    } 
+  };
+  
+  $('trials').oninput=e=>{ 
+    if(!SESSION.running){ 
+      MAX=+e.target.value; 
+      setText('tVal',MAX); 
+      setText('max',MAX); 
+    } 
+  };
+  
+  $('rate').oninput=e=>{ 
+    if(!SESSION.running){ 
+      RATE=+e.target.value; 
+      setText('rVal',RATE+'%'); 
+    } 
+  };
+  
+  $('speakEnabled').onchange=e=>{ 
+    SPEAK=!!e.target.checked; 
+  };
+
+  $('start').onclick=start; 
+  $('pause').onclick=togglePause; 
+  $('reset').onclick=reset; 
+  $('hit').onclick=registerHit; 
+  $('skip').onclick=skip;
+  
+  window.addEventListener('keydown', e=>{ 
+    if(!SESSION.running) return; 
+    if(e.code==='Space'){ 
+      registerHit(); 
+      e.preventDefault(); 
+    } 
+  });
+
+  setText('nVal',N); 
+  setText('stmtVal',STATEMENTS);
+  setText('tVal',MAX); 
+  setText('rVal',RATE+'%');
+  updateUI();
+});
+</script>
+</body>
+</html>
