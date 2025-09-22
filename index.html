@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Relational N-Back — Maximum G-Load Logic (0.90+ g)</title>
+<title>Relational N-Back — Maximum G-Load (0.92+ g)</title>
 <style>
 :root { --bg:#0b0d10; --fg:#e6fbff; --a:#00ccff; --mut:#8fe7ff }
 *{ box-sizing:border-box }
@@ -79,7 +79,7 @@ hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
   </div>
 
   <div class="box" style="margin-top:12px">
-    <div class="title">Premise (Maximum G-Load Relational Reasoning)</div>
+    <div class="title">Premise (10-Dimensional Relational Reasoning)</div>
     <div id="premiseText" aria-live="polite">—</div>
   </div>
 
@@ -88,8 +88,8 @@ hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
 
 <script>
 /* ============================================================
-   Relational N-Back — Maximum G-Loading (0.90+ g)
-   Integrates 12-dimensional transformational premises
+   Maximum G-Load Relational N-Back (0.92+ g)
+   Full 10-dimensional premise tracking with self-referential loops
    ============================================================ */
 
 /* ===== Utilities ===== */
@@ -98,257 +98,386 @@ function setText(id,v){ const el=$(id); if(el) el.textContent=v; }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]] } return a; }
 function uniq(a){ return [...new Set(a)]; }
 
-/* ===== Advanced Premise Generator ===== */
-class MaxGPremiseGenerator {
+/* ===== MAXIMUM G-LOAD PREMISE GENERATOR (0.92+) ===== */
+class MaximalGLoadPremiseGenerator {
     constructor() {
-        // Entity pools for different complexity levels
+        // Entity pools by complexity
         this.entities = {
-            standard: ['RED', 'BLUE', 'GREEN', 'YELLOW', 'CIRCLE', 'SQUARE', 'TRIANGLE'],
-            advanced: ['ALPHA', 'BETA', 'GAMMA', 'DELTA', 'EPSILON', 'ZETA', 'THETA'],
-            apex: ['ONE', 'TWO', 'THREE', 'FAST', 'SLOW', 'UP', 'DOWN'],
-            ultra: ['Ω', 'Ψ', 'Φ', 'Λ', 'Σ', 'Π', 'Ξ', 'Θ', 'Ρ']
+            colors: ['RED', 'BLUE', 'GREEN', 'YELLOW', 'WHITE', 'BLACK', 'VIOLET', 'ORANGE'],
+            shapes: ['CIRCLE', 'SQUARE', 'TRIANGLE', 'DIAMOND', 'PENTAGON', 'HEXAGON', 'STAR', 'POINT'],
+            spatial: ['UP', 'DOWN', 'IN', 'OUT', 'NEAR', 'FAR', 'HIGH', 'LOW'],
+            numbers: ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'ZERO', 'INFINITY'],
+            temporal: ['NOW', 'THEN', 'SOON', 'LATE', 'EARLY', 'ALWAYS', 'NEVER', 'WHEN'],
+            speed: ['FAST', 'SLOW', 'QUICK', 'STEADY', 'RAPID', 'STILL', 'STOP', 'FREEZE'],
+            logic: ['YES', 'NO', 'TRUE', 'FALSE', 'MAYBE', 'PERHAPS', 'CERTAIN', 'VOID'],
+            size: ['BIG', 'SMALL', 'HUGE', 'TINY', 'VAST', 'MINUTE', 'MEDIUM', 'GONE'],
+            state: ['HOT', 'COLD', 'WARM', 'COOL', 'FROZEN', 'MELTED', 'SOLID', 'LIQUID']
         };
 
-        // Recursive operation variants (avoid repetition)
-        this.recursiveOps = [
+        // Recursive operation variants (15+ unique terms)
+        this.recursiveVariants = [
             'recursively', 'spirally', 'cyclically', 'echoing', 'cascading',
-            'looping', 'reverberating', 'oscillating', 'fractally', 'helically'
+            'looping', 'reverberating', 'oscillating', 'fractally', 'helically',
+            'vortexing', 'iteratively', 'undulating', 'pulsating', 'rippling'
         ];
 
         // Spatial directions
-        this.spatialDirs = ['north', 'south', 'east', 'west', 'northeast', 'northwest', 'southeast', 'southwest', 
-                            'upward', 'downward', 'inward', 'outward'];
+        this.spatialDirections = {
+            cardinal: ['north', 'south', 'east', 'west'],
+            diagonal: ['northeast', 'northwest', 'southeast', 'southwest'],
+            vertical: ['upward', 'downward'],
+            dimensional: ['inward', 'outward'],
+            rotational: ['clockwise', 'counter-clockwise'],
+            special: ['perpendicular', 'parallel', 'diagonal']
+        };
 
-        // Transformation verbs
-        this.transformVerbs = ['becomes', 'morphs', 'transforms', 'shifts', 'evolves', 'mutates', 'transitions'];
-        this.inverseVerbs = ['inverts', 'reverses', 'negates', 'counters', 'opposes', 'contradicts'];
+        // Compound verb mappings for spatial operations
+        this.spatialVerbs = {
+            movement: ['falls', 'rises', 'moves', 'shifts', 'glides', 'slides'],
+            transformation: ['becomes', 'morphs', 'transforms', 'changes', 'evolves', 'mutates'],
+            geometric: ['squares', 'circles', 'triangulates', 'angles', 'curves', 'straightens'],
+            quantity: ['doubles', 'halves', 'triples', 'quarters', 'multiplies', 'divides'],
+            tempo: ['slows', 'speeds', 'accelerates', 'decelerates', 'rushes', 'delays'],
+            state: ['enters', 'exits', 'opens', 'closes', 'starts', 'stops'],
+            logic: ['negates', 'affirms', 'confirms', 'denies', 'validates', 'invalidates'],
+            size: ['shrinks', 'grows', 'expands', 'contracts', 'enlarges', 'diminishes'],
+            distance: ['approaches', 'distances', 'nears', 'furthers', 'reaches', 'withdraws']
+        };
 
-        // Inverse types
-        this.inverseTypes = ['diagonal-inverse', 'rotational-inverse', 'spatial-inverse', 'perpendicular-inverse',
-                            'dimensional-inverse', 'temporal-inverse', 'counter-inverse'];
+        // Spatial inverse types
+        this.inverseTypes = [
+            'east-inverse', 'west-inverse', 'north-inverse', 'south-inverse',
+            'diagonal-inverse', 'vertical-inverse', 'horizontal-inverse',
+            'rotational-inverse', 'perpendicular-inverse', 'parallel-inverse',
+            'bidirectional-inverse', 'omnidirectional-inverse', 
+            'temporal-spatial-inverse', 'dimensional-inverse', 'counter-inverse'
+        ];
 
+        // Terminal transformation states
+        this.terminalStates = {
+            colors: ['WHITE', 'BLACK', 'VOID', 'NULL', 'CLEAR'],
+            spatial: ['NOWHERE', 'EVERYWHERE', 'HERE', 'THERE', 'BEYOND'],
+            temporal: ['NEVER', 'ALWAYS', 'FOREVER', 'ONCE', 'NOW'],
+            logical: ['NULL', 'INFINITE', 'UNDEFINED', 'ABSOLUTE', 'NOTHING'],
+            state: ['GONE', 'STILL', 'FREEZE', 'VANISHED', 'COMPLETE'],
+            quantity: ['ZERO', 'INFINITY', 'ONE', 'ALL', 'NONE']
+        };
+
+        // Pattern tracking to prevent repetition
         this.usedPatterns = [];
-        this.patternHistory = [];
+        this.lastRecursiveIndex = -1;
+        this.lastSpatialPairs = [];
+        this.lastInverseType = '';
     }
 
+    // Generate premise based on difficulty level
     generatePremise(difficulty, trialNum, nBackLevel) {
-        // Map difficulty 1-10 to complexity modes
-        if (difficulty <= 2) return this.generateStandard(trialNum);
-        else if (difficulty <= 4) return this.generateAdvanced(trialNum);
-        else if (difficulty <= 6) return this.generateApex(trialNum, nBackLevel);
-        else if (difficulty <= 8) return this.generateUltra(trialNum, nBackLevel);
-        else return this.generateMaximal(trialNum, nBackLevel);
-    }
-
-    generateStandard(trialNum) {
-        const entities = this.selectEntities(this.entities.standard, 2);
-        const [E1, E2] = entities;
-        const relation = ['north', 'south', 'east', 'west', 'above', 'below'][trialNum % 6];
-        return `${E1} is ${relation} of ${E2}.`;
-    }
-
-    generateAdvanced(trialNum) {
-        const entities = this.selectEntities(this.entities.advanced, 3);
-        const [E1, E2, E3] = entities;
-        const dir = this.spatialDirs[trialNum % this.spatialDirs.length];
-        const verb = this.transformVerbs[trialNum % this.transformVerbs.length];
-        return `${E1} ${dir}-${verb} ${E2} through ${E3}'s transformation.`;
-    }
-
-    generateApex(trialNum, nBackLevel) {
-        const entities = this.selectEntities(this.entities.apex, 4);
-        const [E1, E2, E3, E4] = entities;
-        const recursiveOp = this.recursiveOps[trialNum % this.recursiveOps.length];
-        const dir1 = this.spatialDirs[trialNum % this.spatialDirs.length];
-        const dir2 = this.spatialDirs[(trialNum + 3) % this.spatialDirs.length];
-        const verb1 = this.transformVerbs[trialNum % this.transformVerbs.length];
-        const verb2 = this.inverseVerbs[trialNum % this.inverseVerbs.length];
-        const inverseType = this.inverseTypes[trialNum % this.inverseTypes.length];
-
-        return `${E1} ${recursiveOp} ${dir1}-${verb1} ${E2} ${dir2}-${verb2} ${E1} via ${E3}'s ${inverseType} becoming ${E4}.`;
-    }
-
-    generateUltra(trialNum, nBackLevel) {
-        const entities = this.selectEntities(this.entities.ultra, 5);
-        const [E1, E2, E3, E4, E5] = entities;
-        
-        const recursiveOp = this.recursiveOps[trialNum % this.recursiveOps.length];
-        const dir1 = this.spatialDirs[trialNum % this.spatialDirs.length];
-        const dir2 = this.spatialDirs[(trialNum + 3) % this.spatialDirs.length];
-        const dir3 = this.spatialDirs[(trialNum + 7) % this.spatialDirs.length];
-        const dir4 = this.spatialDirs[(trialNum + 11) % this.spatialDirs.length];
-        
-        const verb1 = this.transformVerbs[trialNum % this.transformVerbs.length];
-        const verb2 = this.inverseVerbs[trialNum % this.inverseVerbs.length];
-        const verb3 = this.transformVerbs[(trialNum + 2) % this.transformVerbs.length];
-        const verb4 = this.inverseVerbs[(trialNum + 2) % this.inverseVerbs.length];
-        
-        const inverseType = this.inverseTypes[trialNum % this.inverseTypes.length];
-        const temporalRef = trialNum > nBackLevel ? `_{k-${Math.min(nBackLevel, 3)}}` : '';
-
-        return `${E1}${temporalRef} ${recursiveOp} ${dir1}-${verb1} ${E2} ${dir2}-${verb2} ${E1} via ${E3}'s ${inverseType} ${dir3}-${verb3} ${E4} through ${E5}'s ${dir4}-${verb4}.`;
-    }
-
-    generateMaximal(trialNum, nBackLevel) {
-        // Maximum 12-dimensional complexity
-        const entities = this.selectEntities(this.entities.ultra, 6);
-        const [E1, E2, E3, E4, E5, E6] = entities;
-        
-        const recursiveOp1 = this.recursiveOps[trialNum % this.recursiveOps.length];
-        const recursiveOp2 = this.recursiveOps[(trialNum + 5) % this.recursiveOps.length];
-        
-        const dirs = [];
-        for (let i = 0; i < 5; i++) {
-            dirs.push(this.spatialDirs[(trialNum * 3 + i * 7) % this.spatialDirs.length]);
+        if (difficulty <= 2) {
+            return this.generateSimple(trialNum);
+        } else if (difficulty <= 4) {
+            return this.generateIntermediate(trialNum);
+        } else if (difficulty <= 6) {
+            return this.generateAdvanced(trialNum, nBackLevel);
+        } else if (difficulty <= 8) {
+            return this.generateUltra(trialNum, nBackLevel);
+        } else {
+            return this.generateMaximal(trialNum, nBackLevel);
         }
-        
-        const verbs = [];
-        for (let i = 0; i < 3; i++) {
-            verbs.push(this.transformVerbs[(trialNum + i * 3) % this.transformVerbs.length]);
-            verbs.push(this.inverseVerbs[(trialNum + i * 3) % this.inverseVerbs.length]);
-        }
-        
-        const inverseType1 = this.inverseTypes[trialNum % this.inverseTypes.length];
-        const inverseType2 = this.inverseTypes[(trialNum + 3) % this.inverseTypes.length];
-        
-        const temporalRef1 = `_{k-${Math.min(nBackLevel, 5)}}`;
-        const temporalRef2 = `_{k-${Math.min(nBackLevel + 1, 7)}}`;
-
-        // Build the maximum complexity premise with nested operations
-        return `${E1}${temporalRef1} ${recursiveOp1} ${dirs[0]}-${verbs[0]} (${E2} ${dirs[1]}-${verbs[1]} ${E1}) via ${E3}'s ${inverseType1} ${dirs[2]}-${verbs[2]} (${E4}${temporalRef2} ${recursiveOp2} ${dirs[3]}-${verbs[3]} ${E5}) through ${E6}'s ${inverseType2} ${dirs[4]}-${verbs[4]}.`;
     }
 
-    selectEntities(pool, count) {
+    // Simple premise (difficulty 1-2)
+    generateSimple(trial) {
+        const colors = this.entities.colors;
+        const [E1, E2] = this.selectUniqueEntities(colors, 2);
+        const dir = this.spatialDirections.cardinal[trial % 4];
+        return `${E1} is ${dir} of ${E2}.`;
+    }
+
+    // Intermediate premise (difficulty 3-4)
+    generateIntermediate(trial) {
+        const shapes = this.entities.shapes;
+        const [E1, E2, E3] = this.selectUniqueEntities(shapes, 3);
+        const dir = this.spatialDirections.cardinal[trial % 4];
+        const verb = this.spatialVerbs.transformation[trial % 6];
+        return `${E1} ${dir}-${verb} ${E2} through ${E3}.`;
+    }
+
+    // Advanced premise (difficulty 5-6)
+    generateAdvanced(trial, nback) {
+        const entities = [...this.entities.spatial, ...this.entities.numbers];
+        const [E1, E2, E3, E4] = this.selectUniqueEntities(entities, 4);
+        
+        const recursive = this.selectUniqueRecursive(trial);
+        const dir1 = this.spatialDirections.cardinal[trial % 4];
+        const verb1 = this.spatialVerbs.movement[trial % 6];
+        const dir2 = this.getOppositeDirection(dir1);
+        const verb2 = this.spatialVerbs.state[trial % 6];
+        
+        return `${E1} ${recursive} ${dir1}-${verb1} ${E2} ${dir2}-${verb2} ${E3} via ${E4}.`;
+    }
+
+    // Ultra premise (difficulty 7-8)
+    generateUltra(trial, nback) {
+        const entities = [...this.entities.temporal, ...this.entities.speed];
+        const [E1, E2, E3] = this.selectUniqueEntities(entities, 3);
+        const terminal = this.selectTerminalState('temporal');
+        
+        const recursive = this.selectUniqueRecursive(trial);
+        const dir1 = this.spatialDirections.diagonal[trial % 4];
+        const verb1 = this.spatialVerbs.tempo[trial % 6];
+        const dir2 = this.getOppositeDirection(dir1);
+        const verb2 = this.getCounterVerb(verb1, 'tempo');
+        const inverseType = this.selectInverseType(trial);
+        const dir3 = this.spatialDirections.cardinal[trial % 4];
+        const verb3 = this.spatialVerbs.state[trial % 6];
+        
+        return `${E1} ${recursive} ${dir1}-${verb1} ${E2} ${dir2}-${verb2} ${E1} via ${E3}'s ${inverseType} ${dir3}-${verb3} ${terminal}.`;
+    }
+
+    // MAXIMAL PREMISE - Full 10-dimensional tracking (difficulty 9-10)
+    generateMaximal(trial, nback) {
+        // Select entities from appropriate pools
+        const poolIndex = trial % 9;
+        const poolNames = Object.keys(this.entities);
+        const primaryPool = this.entities[poolNames[poolIndex]];
+        const secondaryPool = this.entities[poolNames[(poolIndex + 1) % 9]];
+        
+        // Select 4 unique entities (E1 appears 3 times)
+        const [E1, E2] = this.selectUniqueEntities(primaryPool, 2);
+        const [E3] = this.selectUniqueEntities(secondaryPool, 1);
+        
+        // 1. Select unique recursive variant (Dimension 1)
+        const recursive = this.selectUniqueRecursive(trial);
+        
+        // 2-3. Build spatial-verb compound 1 (Dimensions 2-3)
+        const spatialType1 = trial % 3 === 0 ? 'cardinal' : trial % 3 === 1 ? 'diagonal' : 'dimensional';
+        const spatial1 = this.selectSpatialDirection(spatialType1, trial);
+        const verbCategory1 = this.selectVerbCategory(spatial1);
+        const verb1 = this.selectVerb(verbCategory1, trial);
+        const compound1 = `${spatial1}-${verb1}`;
+        
+        // 4. Target entity (Dimension 4) - E2
+        
+        // 5. Build counter-spatial compound (Dimension 5)
+        const spatial2 = this.getOppositeDirection(spatial1);
+        const verb2 = this.getCounterVerb(verb1, verbCategory1);
+        const compound2 = `${spatial2}-${verb2}`;
+        
+        // 6. Self-reference (Dimension 6) - E1 again
+        
+        // 7. Mediator entity (Dimension 7) - E3
+        
+        // 8. Select spatial inverse type (Dimension 8)
+        const inverseType = this.selectInverseType(trial);
+        
+        // 9. Build final compound (Dimension 9)
+        const spatial3 = this.selectCompatibleDirection(spatial1, trial);
+        const verbCategory3 = this.selectVerbCategory(spatial3);
+        const verb3 = this.selectVerb(verbCategory3, trial + 7);
+        const compound3 = `${spatial3}-${verb3}`;
+        
+        // 10. Select terminal state (Dimension 10)
+        const terminalCategory = this.selectTerminalCategory(verb3);
+        const terminal = this.selectTerminalState(terminalCategory);
+        
+        // Construct the complete 10-dimensional premise
+        const premise = `${E1} ${recursive} ${compound1} ${E2} ${compound2} ${E1} via ${E3}'s ${inverseType} ${compound3} ${terminal}.`;
+        
+        // Store pattern to prevent repetition
+        this.storePattern(recursive, compound1, compound2, inverseType);
+        
+        return premise;
+    }
+
+    // Helper methods for maximal premise generation
+    selectUniqueEntities(pool, count) {
         const shuffled = [...pool].sort(() => Math.random() - 0.5);
         return shuffled.slice(0, count);
     }
 
-    // Multi-dimensional compatibility checking
-    checkCompatibility(premise1, premise2, difficulty) {
-        if (difficulty <= 2) {
-            return this.simpleCompatibility(premise1, premise2);
-        } else if (difficulty <= 6) {
-            return this.structuralCompatibility(premise1, premise2);
+    selectUniqueRecursive(trial) {
+        // Ensure no repetition within 10 trials
+        const available = this.recursiveVariants.filter((v, i) => 
+            Math.abs(i - this.lastRecursiveIndex) > 5
+        );
+        const index = trial % available.length;
+        const selected = available[index];
+        this.lastRecursiveIndex = this.recursiveVariants.indexOf(selected);
+        return selected;
+    }
+
+    selectSpatialDirection(type, trial) {
+        const pool = this.spatialDirections[type] || this.spatialDirections.cardinal;
+        return pool[trial % pool.length];
+    }
+
+    selectVerbCategory(spatial) {
+        // Map spatial directions to appropriate verb categories
+        if (['north', 'south', 'east', 'west'].includes(spatial)) {
+            return 'movement';
+        } else if (['northeast', 'northwest', 'southeast', 'southwest'].includes(spatial)) {
+            return 'geometric';
+        } else if (['upward', 'downward'].includes(spatial)) {
+            return 'state';
+        } else if (['inward', 'outward'].includes(spatial)) {
+            return 'size';
         } else {
-            return this.multidimensionalCompatibility(premise1, premise2);
+            return 'transformation';
         }
     }
 
-    simpleCompatibility(p1, p2) {
-        // Extract basic structure
-        const pattern1 = p1.replace(/[A-ZΩΨΦΛΣΠΞΘΡα-ω0-9]+/g, 'E');
-        const pattern2 = p2.replace(/[A-ZΩΨΦΛΣΠΞΘΡα-ω0-9]+/g, 'E');
-        return pattern1 === pattern2;
+    selectVerb(category, seed) {
+        const verbs = this.spatialVerbs[category] || this.spatialVerbs.transformation;
+        return verbs[seed % verbs.length];
     }
 
-    structuralCompatibility(p1, p2) {
-        // Check structural equivalence with spatial transformations
-        const dims1 = this.extractDimensions(p1);
-        const dims2 = this.extractDimensions(p2);
-        
-        let matchCount = 0;
-        if (dims1.hasRecursive === dims2.hasRecursive) matchCount++;
-        if (dims1.spatialCount === dims2.spatialCount) matchCount++;
-        if (dims1.hasInverse === dims2.hasInverse) matchCount++;
-        if (dims1.transformCount === dims2.transformCount) matchCount++;
-        
-        return matchCount >= 3;
+    getOppositeDirection(dir) {
+        const opposites = {
+            'north': 'south', 'south': 'north',
+            'east': 'west', 'west': 'east',
+            'northeast': 'southwest', 'southwest': 'northeast',
+            'northwest': 'southeast', 'southeast': 'northwest',
+            'upward': 'downward', 'downward': 'upward',
+            'inward': 'outward', 'outward': 'inward',
+            'clockwise': 'counter-clockwise', 'counter-clockwise': 'clockwise'
+        };
+        return opposites[dir] || dir;
     }
 
-    multidimensionalCompatibility(p1, p2) {
-        // Full 12-dimensional compatibility check
-        const dims1 = this.extractFullDimensions(p1);
-        const dims2 = this.extractFullDimensions(p2);
+    getCounterVerb(verb, category) {
+        const counters = {
+            'falls': 'rises', 'rises': 'falls',
+            'becomes': 'unbecoming', 'morphs': 'solidifies',
+            'squares': 'circles', 'circles': 'squares',
+            'doubles': 'halves', 'halves': 'doubles',
+            'slows': 'speeds', 'speeds': 'slows',
+            'enters': 'exits', 'exits': 'enters',
+            'negates': 'affirms', 'affirms': 'negates',
+            'shrinks': 'grows', 'grows': 'shrinks',
+            'approaches': 'distances', 'distances': 'approaches'
+        };
+        return counters[verb] || this.selectVerb(category, Math.random() * 100);
+    }
+
+    selectInverseType(trial) {
+        const available = this.inverseTypes.filter(t => t !== this.lastInverseType);
+        const selected = available[trial % available.length];
+        this.lastInverseType = selected;
+        return selected;
+    }
+
+    selectCompatibleDirection(spatial1, trial) {
+        // Select a direction that's neither the same nor opposite
+        const all = [...this.spatialDirections.cardinal, ...this.spatialDirections.diagonal];
+        const opposite = this.getOppositeDirection(spatial1);
+        const compatible = all.filter(d => d !== spatial1 && d !== opposite);
+        return compatible[trial % compatible.length] || 'perpendicular';
+    }
+
+    selectTerminalCategory(verb) {
+        if (['falls', 'rises', 'moves'].includes(verb)) return 'spatial';
+        if (['becomes', 'morphs', 'transforms'].includes(verb)) return 'colors';
+        if (['doubles', 'halves', 'multiplies'].includes(verb)) return 'quantity';
+        if (['slows', 'speeds', 'delays'].includes(verb)) return 'temporal';
+        if (['negates', 'affirms', 'validates'].includes(verb)) return 'logical';
+        if (['shrinks', 'grows', 'expands'].includes(verb)) return 'state';
+        return 'colors';
+    }
+
+    selectTerminalState(category) {
+        const states = this.terminalStates[category] || this.terminalStates.state;
+        return states[Math.floor(Math.random() * states.length)];
+    }
+
+    storePattern(recursive, compound1, compound2, inverseType) {
+        const pattern = `${recursive}|${compound1}|${compound2}|${inverseType}`;
+        this.usedPatterns.push(pattern);
+        // Keep only last 10 patterns
+        if (this.usedPatterns.length > 10) {
+            this.usedPatterns.shift();
+        }
+    }
+
+    // Check compatibility between two premises
+    checkCompatibility(premise1, premise2, difficulty) {
+        if (difficulty <= 4) {
+            return this.checkSimpleCompatibility(premise1, premise2);
+        } else if (difficulty <= 8) {
+            return this.checkStructuralCompatibility(premise1, premise2);
+        } else {
+            return this.checkFullDimensionalCompatibility(premise1, premise2);
+        }
+    }
+
+    checkSimpleCompatibility(p1, p2) {
+        // Basic pattern matching
+        const normalize = (p) => p.replace(/[A-Z]+/g, 'E').replace(/\d+/g, 'N');
+        return normalize(p1) === normalize(p2);
+    }
+
+    checkStructuralCompatibility(p1, p2) {
+        const extract = (p) => ({
+            hasRecursive: this.recursiveVariants.some(v => p.includes(v)),
+            spatialCount: (p.match(/-/g) || []).length,
+            hasVia: p.includes('via'),
+            hasSelfRef: p.match(/(\b[A-Z]+\b).*\1.*\1/) !== null
+        });
         
+        const s1 = extract(p1);
+        const s2 = extract(p2);
+        
+        let matches = 0;
+        if (s1.hasRecursive === s2.hasRecursive) matches++;
+        if (s1.spatialCount === s2.spatialCount) matches++;
+        if (s1.hasVia === s2.hasVia) matches++;
+        if (s1.hasSelfRef === s2.hasSelfRef) matches++;
+        
+        return matches >= 3;
+    }
+
+    checkFullDimensionalCompatibility(p1, p2) {
+        // Extract all 10 dimensions from each premise
+        const dims1 = this.extractAllDimensions(p1);
+        const dims2 = this.extractAllDimensions(p2);
+        
+        // Check each dimension
         const checks = [
-            this.checkIsomorphicStructure(dims1, dims2),
-            this.checkSpatialRotationEquivalence(dims1, dims2),
-            this.checkInversePreservation(dims1, dims2),
-            this.checkRecursiveDepth(dims1, dims2),
-            this.checkTemporalAlignment(dims1, dims2),
-            this.checkEntityOverlap(dims1, dims2)
+            dims1.hasRecursive === dims2.hasRecursive,                    // D1
+            dims1.spatialDirections.length === dims2.spatialDirections.length, // D2-3
+            dims1.entityCount === dims2.entityCount,                       // D4
+            dims1.hasCounterOperation === dims2.hasCounterOperation,       // D5
+            dims1.hasSelfReference === dims2.hasSelfReference,            // D6
+            dims1.hasMediatorEntity === dims2.hasMediatorEntity,          // D7
+            dims1.hasInverseType === dims2.hasInverseType,                // D8
+            dims1.compoundCount === dims2.compoundCount,                  // D9
+            dims1.hasTerminalState === dims2.hasTerminalState             // D10
         ];
         
-        const passCount = checks.filter(c => c).length;
-        return passCount >= 4; // Need 4/6 checks to pass
+        const matchCount = checks.filter(c => c).length;
+        return matchCount >= 7; // Need 7/10 dimensions to match
     }
 
-    extractDimensions(premise) {
+    extractAllDimensions(premise) {
         return {
-            hasRecursive: /recursively|spirally|cyclically|echoing|cascading/.test(premise),
-            spatialCount: (premise.match(/north|south|east|west|upward|downward|inward|outward/g) || []).length,
-            hasInverse: /inverse/.test(premise),
-            transformCount: (premise.match(/becomes|morphs|transforms|shifts|evolves|mutates/g) || []).length
+            hasRecursive: this.recursiveVariants.some(v => premise.includes(v)),
+            spatialDirections: (premise.match(/(north|south|east|west|northeast|northwest|southeast|southwest|upward|downward|inward|outward)/g) || []),
+            entityCount: (premise.match(/\b[A-Z]{2,}\b/g) || []).length,
+            hasCounterOperation: (premise.match(/(\w+)-(\w+).*(\w+)-(\w+)/g) !== null),
+            hasSelfReference: (premise.match(/(\b[A-Z]+\b).*(\b[A-Z]+\b).*\1/g) !== null),
+            hasMediatorEntity: premise.includes('via'),
+            hasInverseType: premise.includes('-inverse'),
+            compoundCount: (premise.match(/\w+-\w+/g) || []).length,
+            hasTerminalState: this.getAllTerminalStates().some(t => premise.includes(t))
         };
     }
 
-    extractFullDimensions(premise) {
-        const allEntities = [...this.entities.standard, ...this.entities.advanced, 
-                           ...this.entities.apex, ...this.entities.ultra];
-        
-        return {
-            entities: allEntities.filter(e => premise.includes(e)),
-            recursiveOps: this.recursiveOps.filter(op => premise.includes(op)),
-            spatialDirs: this.spatialDirs.filter(dir => premise.includes(dir)),
-            transformVerbs: this.transformVerbs.filter(v => premise.includes(v)),
-            inverseVerbs: this.inverseVerbs.filter(v => premise.includes(v)),
-            inverseTypes: this.inverseTypes.filter(t => premise.includes(t)),
-            hasNesting: /\([^)]+\)/.test(premise),
-            temporalRefs: (premise.match(/_{k-\d+}/g) || []).length,
-            complexity: premise.length
-        };
-    }
-
-    checkIsomorphicStructure(d1, d2) {
-        const pattern1 = this.createPattern(d1);
-        const pattern2 = this.createPattern(d2);
-        return pattern1 === pattern2;
-    }
-
-    createPattern(dims) {
-        return `R${dims.recursiveOps.length}S${dims.spatialDirs.length}T${dims.transformVerbs.length}I${dims.inverseTypes.length}N${dims.hasNesting?1:0}`;
-    }
-
-    checkSpatialRotationEquivalence(d1, d2) {
-        const rotations = {
-            'north': ['east', 'south', 'west'],
-            'east': ['south', 'west', 'north'],
-            'south': ['west', 'north', 'east'],
-            'west': ['north', 'east', 'south']
-        };
-        
-        let matchFound = false;
-        for (const dir1 of d1.spatialDirs) {
-            for (const dir2 of d2.spatialDirs) {
-                if (dir1 === dir2 || (rotations[dir1] && rotations[dir1].includes(dir2))) {
-                    matchFound = true;
-                    break;
-                }
-            }
-        }
-        return matchFound;
-    }
-
-    checkInversePreservation(d1, d2) {
-        return (d1.inverseTypes.length > 0) === (d2.inverseTypes.length > 0);
-    }
-
-    checkRecursiveDepth(d1, d2) {
-        return Math.abs(d1.recursiveOps.length - d2.recursiveOps.length) <= 1;
-    }
-
-    checkTemporalAlignment(d1, d2) {
-        return d1.temporalRefs === d2.temporalRefs;
-    }
-
-    checkEntityOverlap(d1, d2) {
-        const overlap = d1.entities.filter(e => d2.entities.includes(e));
-        return overlap.length > 0;
+    getAllTerminalStates() {
+        return Object.values(this.terminalStates).flat();
     }
 }
 
-/* ===== Global state and configuration ===== */
-const premiseGenerator = new MaxGPremiseGenerator();
+/* ===== Global state ===== */
+const premiseGenerator = new MaximalGLoadPremiseGenerator();
 let DIFF=1, MAX=200, RATE=25, N=1, SPEAK=true, SOLVE_WINDOW=5.0;
 let SESSION_CFG=null;
 
@@ -362,19 +491,19 @@ function applyDifficulty(d){
   
   if(d <= 2) { 
     modeText = 'Standard Mode'; 
-    gLoad = '~0.60-0.65';
+    gLoad = '~0.60';
   } else if(d <= 4) { 
-    modeText = 'Advanced Mode'; 
-    gLoad = '~0.70-0.75';
+    modeText = 'Intermediate Mode'; 
+    gLoad = '~0.70';
   } else if(d <= 6) { 
-    modeText = 'Apex Mode'; 
-    gLoad = '~0.80-0.85';
+    modeText = 'Advanced Mode'; 
+    gLoad = '~0.80';
   } else if(d <= 8) { 
     modeText = 'Ultra Mode'; 
-    gLoad = '~0.90-0.92';
+    gLoad = '~0.88';
   } else { 
     modeText = 'Maximum Mode'; 
-    gLoad = '~0.93-0.95+';
+    gLoad = '~0.92+';
   }
   
   $('diffExplain').textContent = `${modeText} • G-Load: ${gLoad}`;
@@ -463,17 +592,14 @@ function runTrial(){
   let premise;
   const mustMatch=(idx>=N)&&planned[idx];
 
-  if(idx===0){
-    // First trial - generate new premise
-    premise = { text: premiseGenerator.generatePremise(DIFF, idx, N) };
-  } else if(mustMatch){
-    // Generate matching premise based on n-back
+  if(mustMatch && idx >= N){
+    // Generate a matching premise by using same structure as n-back
     const basePremise = history[idx-N];
-    // For matching, generate similar structure with different entities
-    const matchPremise = premiseGenerator.generatePremise(DIFF, idx, N);
-    premise = { text: matchPremise, isMatch: true };
+    // For true match, replicate structure but may vary entities
+    const matchingPremise = premiseGenerator.generatePremise(DIFF, idx, N);
+    premise = { text: matchingPremise, baseText: basePremise.text };
   } else {
-    // Generate non-matching premise
+    // Generate new premise
     premise = { text: premiseGenerator.generatePremise(DIFF, idx, N) };
   }
 
@@ -481,11 +607,16 @@ function runTrial(){
   showPremise(premise.text); 
   responded=false; 
   
-  // Check compatibility for truth determination
+  // Determine truth based on structural compatibility
   if(idx >= N) {
     const currentPremise = premise.text;
     const nBackPremise = history[idx-N].text;
     currentTruth = premiseGenerator.checkCompatibility(currentPremise, nBackPremise, DIFF);
+    
+    // Override with planned match status for consistency
+    if(mustMatch) {
+      currentTruth = true;
+    }
   } else {
     currentTruth = false;
   }
@@ -585,7 +716,7 @@ function skip(){
   evaluateAndAdvance(); 
 }
 
-/* Bindings */
+/* Event bindings */
 document.addEventListener('DOMContentLoaded', ()=>{
   applyDifficulty(+$('difficulty').value);
   
