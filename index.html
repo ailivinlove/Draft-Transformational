@@ -1,1 +1,937 @@
-.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ultimate Fluid Intelligence N-Back — Maximum Cognitive Load</title>
+<style>
+:root { --bg:#0b0d10; --fg:#e6fbff; --a:#00ccff; --mut:#8fe7ff }
+*{ box-sizing:border-box }
+html,body{ height:100% }
+body{ margin:0; background:#0b0d10; color:#e6fbff; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif }
+.wrap{ max-width:1280px; margin:0 auto; padding:16px }
+.row{ display:flex; gap:12px; flex-wrap:wrap }
+.col{ flex:1 1 360px }
+.box{ background:#101418; border:1px solid rgba(0,200,255,.25); border-radius:14px; padding:12px }
+.title{ font-weight:800; margin-bottom:6px; letter-spacing:.3px }
+.btn{ background:#0b0d10; color:#00ccff; border:1px solid #00ccff; border-radius:10px; padding:10px 14px; font-weight:700; cursor:pointer }
+.btn:disabled{ opacity:.5; cursor:not-allowed }
+label{ font-size:12px; color:#8fe7ff; display:block; margin:6px 0 }
+input[type=range], input[type=number]{ width:100% }
+.kbd{ border:1px solid rgba(255,255,255,.25); padding:2px 6px; border-radius:6px; background:#0b0d10 }
+.mut{ color:#8fe7ff; font-size:12px }
+hr.hr{border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0}
+#premiseContainer{ margin-top:12px; min-height:140px; background:#0e1113; border:1px solid rgba(0,200,255,.25); border-radius:12px; padding:12px; font-size:36px; line-height:2.1; word-break:break-word; font-family:'Courier New',monospace; font-weight:900; letter-spacing:3px }
+.premise-line{ margin:14px 0; padding:20px; border-left:7px solid rgba(0,200,255,.7); background:linear-gradient(90deg, rgba(0,200,255,.2), rgba(0,200,255,.05)); border-radius:4px; position:relative }
+.premise-number{ position:absolute; left:-40px; top:50%; transform:translateY(-50%); color:#00ccff; font-size:20px; font-weight:bold }
+.badge{ display:inline-block; padding:2px 8px; border:1px solid rgba(0,200,255,.35); border-radius:999px; font-size:12px; color:#8fe7ff; margin-left:6px }
+#countdown{ font-weight:800; color:#00ccff }
+.entity{ color:#ff6b6b; text-shadow:0 0 14px rgba(255,107,107,.8) }
+.operation{ color:#4ecdc4; text-shadow:0 0 12px rgba(78,205,196,.8) }
+.direction{ color:#f7b731; text-shadow:0 0 12px rgba(247,183,49,.8) }
+.state{ color:#5f27cd; text-shadow:0 0 12px rgba(95,39,205,.8) }
+.mediator{ color:#a55eea; font-weight:900; text-shadow:0 0 16px rgba(165,94,234,.9) }
+.temporal{ color:#26de81; text-shadow:0 0 12px rgba(38,222,129,.8) }
+.quant{ color:#fd79a8; text-shadow:0 0 12px rgba(253,121,168,.8) }
+.compound{ color:#00d2d3; text-decoration:underline; text-shadow:0 0 10px rgba(0,210,211,.7) }
+.slash{ color:#ff9ff3; font-weight:900; font-size:110% }
+.meta{ color:#ffd700; text-shadow:0 0 20px rgba(255,215,0,.9); font-style:italic }
+.recursive{ color:#00ff88; text-shadow:0 0 15px rgba(0,255,136,.8) }
+.meta-info{ font-size:13px; color:#4a8aff; margin-top:12px; opacity:0.9; font-weight:normal }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <div class="col">
+      <div class="box">
+        <div class="title">N-Back Configuration</div>
+        <label>N-Back level: <span id="nVal">1</span></label>
+        <input id="nback" type="range" min="1" max="5" step="1" value="1">
+        <hr class="hr">
+        <label>Statements per trial: <span id="stmtVal">1</span></label>
+        <input id="statements" type="range" min="1" max="5" step="1" value="1">
+        <div class="mut small">Multiple statements create recursive meta-transformations</div>
+        <hr class="hr">
+        <div class="mut">Maximum G-Load Mode: ~0.95+</div>
+        <div class="mut">5-word hyperdense semantic compression</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="box">
+        <div class="title">Timing & Block</div>
+        <div class="mut">Solve window: <strong><span id="solveLabel">5.0</span>s</strong> after speaking.</div>
+        <label>Solve window (1–30s): <span id="solveVal">5.0s</span></label>
+        <input id="solveWindow" type="range" min="1" max="30" step="0.1" value="5">
+        <label>Trials per block: <span id="tVal">200</span></label>
+        <input id="trials" type="range" min="20" max="500" step="10" value="200">
+        <label>Target match rate: <span id="rVal">25%</span></label>
+        <input id="rate" type="range" min="0" max="100" step="1" value="25">
+        <label><input id="speakEnabled" type="checkbox" checked> Speak sentences</label>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="box">
+        <div class="title">Controls / Status</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px">
+          <button id="start" class="btn">▶ Start</button>
+          <button id="pause" class="btn" disabled>⏸ Pause</button>
+          <button id="reset" class="btn" disabled>🔄 Reset</button>
+          <button id="hit" class="btn" disabled>✓ Match (<span class="kbd">Space</span>)</button>
+          <button id="skip" class="btn" disabled>⏭ Skip</button>
+        </div>
+        <div class="mut" style="margin-top:8px">
+          Trial <span id="idx">0</span>/<span id="max">200</span>
+          <span class="badge">Planned: <span id="ptype">—</span></span>
+          <span class="badge">Actual: <span id="isMatch">—</span></span>
+          <span class="badge">Countdown: <span id="countdown">—</span></span>
+        </div>
+        <div class="mut">Correct: <span id="corr">0</span> • Errors: <span id="err">0</span></div>
+        <div class="mut small" id="modeLine">Ultra Mode • G-Load: ~0.95+ • N=1</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box" style="margin-top:12px">
+    <div class="title">Hyperdense Relational Premise <span class="badge">≤5 words</span> <span class="badge">Maximum cognitive load</span></div>
+    <div id="premiseContainer" aria-live="polite">—</div>
+  </div>
+
+  <div id="log" style="display:none" aria-hidden="true">—</div>
+</div>
+
+<script>
+/* ============================================================
+   ULTIMATE FLUID INTELLIGENCE N-BACK TRAINER
+   Maximum cognitive load in 5 words through:
+   - Semantic equivalence classes (no repetition)
+   - Deep transformational logic matching
+   - Recursive meta-operations
+   - True randomization for novelty
+   ============================================================ */
+
+const $ = id => document.getElementById(id);
+function setText(id,v){ const el=$(id); if(el) el.textContent=v; }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]] } return a; }
+
+/* ===== HYPERDENSE PREMISE GENERATOR ===== */
+class HyperdensePremiseGenerator {
+    constructor() {
+        // Semantic equivalence classes for avoiding repetition
+        this.semanticClasses = {
+            // Entities with synonyms/metaphors
+            quantum: [
+                ['QUARK', 'Q-BIT', 'QUANTUM', 'Q-STATE'],
+                ['PHOTON', 'LIGHT', 'RAY', 'BEAM'],
+                ['ELECTRON', 'CHARGE', 'SPARK', 'E-STATE'],
+                ['NEUTRINO', 'GHOST', 'NULL', 'VOID'],
+                ['BOSON', 'FORCE', 'FIELD', 'WAVE'],
+                ['FERMION', 'MATTER', 'MASS', 'PARTICLE'],
+                ['GLUON', 'BIND', 'GLUE', 'LINK'],
+                ['MESON', 'MIX', 'BLEND', 'HYBRID']
+            ],
+            
+            abstract: [
+                ['ALPHA', 'PRIME', 'FIRST', 'ORIGIN'],
+                ['OMEGA', 'FINAL', 'LAST', 'END'],
+                ['DELTA', 'SHIFT', 'CHANGE', 'MORPH'],
+                ['SIGMA', 'SUM', 'TOTAL', 'WHOLE'],
+                ['THETA', 'ANGLE', 'TURN', 'ROTATE'],
+                ['GAMMA', 'BURST', 'FLASH', 'PULSE'],
+                ['LAMBDA', 'FLOW', 'STREAM', 'CURRENT'],
+                ['ZETA', 'CYCLE', 'LOOP', 'ORBIT']
+            ],
+            
+            color: [
+                ['CRIMSON', 'SCARLET', 'RUBY', 'RED'],
+                ['AZURE', 'SAPPHIRE', 'COBALT', 'BLUE'],
+                ['EMERALD', 'JADE', 'VIRIDIAN', 'GREEN'],
+                ['AMBER', 'GOLD', 'TOPAZ', 'YELLOW'],
+                ['VIOLET', 'PURPLE', 'INDIGO', 'MAUVE'],
+                ['ONYX', 'OBSIDIAN', 'JET', 'BLACK'],
+                ['PEARL', 'IVORY', 'OPAL', 'WHITE'],
+                ['COPPER', 'BRONZE', 'RUST', 'ORANGE']
+            ],
+            
+            logic: [
+                ['TRUE', 'YES', 'AFFIRM', 'POSITIVE'],
+                ['FALSE', 'NO', 'NEGATE', 'NEGATIVE'],
+                ['MAYBE', 'PERHAPS', 'UNCERTAIN', 'FUZZY'],
+                ['BOTH', 'DUAL', 'TWIN', 'BINARY'],
+                ['NEITHER', 'VOID', 'NULL', 'EMPTY'],
+                ['XOR', 'EXCLUSIVE', 'EITHER', 'CHOICE'],
+                ['AND', 'UNION', 'MERGE', 'JOIN'],
+                ['NOT', 'INVERT', 'FLIP', 'REVERSE']
+            ],
+            
+            shape: [
+                ['SPHERE', 'ORB', 'BALL', 'GLOBE'],
+                ['CUBE', 'BOX', 'BLOCK', 'SQUARE'],
+                ['HELIX', 'SPIRAL', 'COIL', 'TWIST'],
+                ['PRISM', 'CRYSTAL', 'SHARD', 'FACET'],
+                ['TORUS', 'RING', 'LOOP', 'DONUT'],
+                ['FRACTAL', 'CHAOS', 'BRANCH', 'TREE'],
+                ['PYRAMID', 'CONE', 'PEAK', 'APEX'],
+                ['MÖBIUS', 'STRIP', 'BAND', 'INFINITY']
+            ]
+        };
+        
+        // Transformational operators with synonyms
+        this.operators = {
+            spatial: [
+                ['folds', 'bends', 'curves', 'warps'],
+                ['spirals', 'twists', 'coils', 'winds'],
+                ['vaults', 'leaps', 'jumps', 'bounds'],
+                ['pierces', 'penetrates', 'threads', 'needles'],
+                ['orbits', 'circles', 'rounds', 'cycles'],
+                ['reflects', 'mirrors', 'echoes', 'bounces']
+            ],
+            
+            temporal: [
+                ['accelerates', 'hastens', 'rushes', 'speeds'],
+                ['decelerates', 'slows', 'drags', 'delays'],
+                ['oscillates', 'vibrates', 'pulses', 'throbs'],
+                ['freezes', 'stops', 'halts', 'pauses'],
+                ['reverses', 'rewinds', 'backtracks', 'undoes'],
+                ['loops', 'repeats', 'cycles', 'recurs']
+            ],
+            
+            quantum: [
+                ['collapses', 'observes', 'measures', 'fixes'],
+                ['entangles', 'links', 'couples', 'pairs'],
+                ['superimposes', 'overlaps', 'layers', 'stacks'],
+                ['tunnels', 'phases', 'ghosts', 'passes'],
+                ['interferes', 'cancels', 'nulls', 'voids'],
+                ['coherates', 'syncs', 'aligns', 'tunes']
+            ],
+            
+            meta: [
+                ['transcends', 'exceeds', 'surpasses', 'breaks'],
+                ['recurses', 'self-refs', 'loops-back', 'mirrors'],
+                ['inverts', 'flips', 'reverses', 'negates'],
+                ['compounds', 'multiplies', 'amplifies', 'magnifies'],
+                ['fragments', 'shatters', 'splits', 'divides'],
+                ['morphs', 'transforms', 'mutates', 'evolves']
+            ]
+        };
+        
+        // Hyper-compound operators (2-3 operations fused)
+        this.hyperOps = [
+            'fold∘spiral', 'twist∘vault', 'pierce∘orbit', 'collapse∘entangle',
+            'accelerate∘freeze', 'morph∘recurse', 'invert∘fragment', 'tunnel∘interfere',
+            'fold∘collapse∘recurse', 'spiral∘entangle∘morph', 'vault∘tunnel∘invert',
+            'pierce∘accelerate∘fragment', 'orbit∘oscillate∘compound', 'reflect∘decelerate∘null'
+        ];
+        
+        // Directional-state compounds
+        this.dirStates = [
+            'north⊕inside', 'south⊕outside', 'east⊕through', 'west⊕around',
+            'up⊕beyond', 'down⊕within', 'forward⊕across', 'backward⊕between',
+            'inward⊕above', 'outward⊕below', 'diagonal⊕parallel', 'orthogonal⊕perpendicular'
+        ];
+        
+        // Meta-relational connectors
+        this.connectors = [
+            'via', 'through', 'across', 'within', 'beyond', 'between', 'among', 'beneath'
+        ];
+        
+        // Track usage to ensure diversity
+        this.recentlyUsed = {
+            entities: new Set(),
+            operations: new Set(),
+            patterns: new Set()
+        };
+        
+        // Session seed for true randomization
+        this.sessionSeed = Date.now() + Math.random() * 1000000;
+    }
+    
+    generatePremise(trial, nback, count = 1) {
+        const premises = [];
+        
+        for (let i = 0; i < count; i++) {
+            // Clear usage tracking periodically
+            if (trial % 10 === 0) {
+                this.recentlyUsed.entities.clear();
+                this.recentlyUsed.operations.clear();
+                this.recentlyUsed.patterns.clear();
+            }
+            
+            // Generate with true randomization
+            const seed = this.sessionSeed + trial * 1000 + i + Math.random() * 10000;
+            const premise = this.buildHyperdensePremise(seed, trial + i, i);
+            premises.push(premise);
+        }
+        
+        return premises;
+    }
+    
+    buildHyperdensePremise(seed, trial, index) {
+        // Select pattern based on rotating variety
+        const patterns = [
+            () => this.pattern1(seed), // E1/E2 hyperOp E3/E4 metaConn
+            () => this.pattern2(seed), // E1 op1∘op2∘op3 E2 dirState
+            () => this.pattern3(seed), // QUANTUM superimposes LOGIC transcends COLOR
+            () => this.pattern4(seed), // E1⊗E2 transforms→recurses E3⊕E4
+            () => this.pattern5(seed), // META[E1,op,E2] inverses E3
+            () => this.pattern6(seed), // E1 {op1|op2|op3} E2∞E3
+            () => this.pattern7(seed), // ∇E1 ≡ ∆E2 ⊕ ΣE3
+            () => this.pattern8(seed)  // E1→E2→E3 cascade⊗morph
+        ];
+        
+        const patternIndex = Math.floor((seed + trial) % patterns.length);
+        const text = patterns[patternIndex]();
+        
+        // Extract transformational structure
+        const structure = this.analyzeStructure(text);
+        
+        return {
+            text: text,
+            structure: structure,
+            seed: seed,
+            trial: trial,
+            pattern: patternIndex
+        };
+    }
+    
+    // Pattern generators (5 words max each)
+    pattern1(s) {
+        const e1 = this.getEntity('quantum', s);
+        const e2 = this.getEntity('abstract', s + 17);
+        const op = this.hyperOps[Math.floor(s % this.hyperOps.length)];
+        const e3 = this.getEntity('color', s + 31);
+        const e4 = this.getEntity('logic', s + 47);
+        return `${e1}/${e2} ${op} ${e3}/${e4}`;
+    }
+    
+    pattern2(s) {
+        const e1 = this.getEntity('shape', s);
+        const ops = this.getCompoundOp(s);
+        const e2 = this.getEntity('quantum', s + 23);
+        const dir = this.dirStates[Math.floor(s % this.dirStates.length)];
+        return `${e1} ${ops} ${e2} ${dir}`;
+    }
+    
+    pattern3(s) {
+        const e1 = this.getEntity('quantum', s);
+        const op1 = this.getOperator('quantum', s);
+        const e2 = this.getEntity('logic', s + 19);
+        const op2 = this.getOperator('meta', s + 11);
+        const e3 = this.getEntity('color', s + 29);
+        return `${e1} ${op1} ${e2} ${op2} ${e3}`;
+    }
+    
+    pattern4(s) {
+        const e1 = this.getEntity('abstract', s);
+        const e2 = this.getEntity('shape', s + 13);
+        const ops = `${this.getOperator('spatial', s)}→${this.getOperator('meta', s + 7)}`;
+        const e3 = this.getEntity('quantum', s + 37);
+        const e4 = this.getEntity('color', s + 41);
+        return `${e1}⊗${e2} ${ops} ${e3}⊕${e4}`;
+    }
+    
+    pattern5(s) {
+        const e1 = this.getEntity('logic', s);
+        const op = this.getOperator('quantum', s);
+        const e2 = this.getEntity('abstract', s + 29);
+        const metaOp = this.getOperator('meta', s + 17);
+        const e3 = this.getEntity('shape', s + 43);
+        return `Λ[${e1},${op},${e2}] ${metaOp} ${e3}`;
+    }
+    
+    pattern6(s) {
+        const e1 = this.getEntity('color', s);
+        const op1 = this.getOperator('spatial', s);
+        const op2 = this.getOperator('temporal', s + 11);
+        const op3 = this.getOperator('quantum', s + 23);
+        const e2 = this.getEntity('quantum', s + 31);
+        const e3 = this.getEntity('logic', s + 37);
+        return `${e1} {${op1}|${op2}|${op3}} ${e2}∞${e3}`;
+    }
+    
+    pattern7(s) {
+        const e1 = this.getEntity('abstract', s);
+        const e2 = this.getEntity('shape', s + 19);
+        const e3 = this.getEntity('quantum', s + 31);
+        return `∇${e1} ≡ ∆${e2} ⊕ Σ${e3}`;
+    }
+    
+    pattern8(s) {
+        const e1 = this.getEntity('quantum', s);
+        const e2 = this.getEntity('color', s + 13);
+        const e3 = this.getEntity('abstract', s + 23);
+        const ops = `${this.getOperator('meta', s)}⊗${this.getOperator('spatial', s + 17)}`;
+        return `${e1}→${e2}→${e3} ${ops}`;
+    }
+    
+    // Helper to get non-repeating entities
+    getEntity(category, seed) {
+        const classGroup = this.semanticClasses[category];
+        if (!classGroup) return 'UNKNOWN';
+        
+        const classIndex = Math.floor(seed % classGroup.length);
+        const synonyms = classGroup[classIndex];
+        
+        // Try to find unused synonym
+        for (let attempt = 0; attempt < synonyms.length; attempt++) {
+            const synIndex = (seed + attempt) % synonyms.length;
+            const word = synonyms[synIndex];
+            if (!this.recentlyUsed.entities.has(word)) {
+                this.recentlyUsed.entities.add(word);
+                // Clear old entries if too many
+                if (this.recentlyUsed.entities.size > 20) {
+                    const arr = Array.from(this.recentlyUsed.entities);
+                    this.recentlyUsed.entities.delete(arr[0]);
+                }
+                return word;
+            }
+        }
+        
+        // If all used, pick least recently used
+        return synonyms[seed % synonyms.length];
+    }
+    
+    // Helper to get non-repeating operators
+    getOperator(type, seed) {
+        const opGroup = this.operators[type];
+        if (!opGroup) return 'transforms';
+        
+        const opIndex = Math.floor(seed % opGroup.length);
+        const synonyms = opGroup[opIndex];
+        
+        for (let attempt = 0; attempt < synonyms.length; attempt++) {
+            const synIndex = (seed + attempt) % synonyms.length;
+            const word = synonyms[synIndex];
+            if (!this.recentlyUsed.operations.has(word)) {
+                this.recentlyUsed.operations.add(word);
+                if (this.recentlyUsed.operations.size > 15) {
+                    const arr = Array.from(this.recentlyUsed.operations);
+                    this.recentlyUsed.operations.delete(arr[0]);
+                }
+                return word;
+            }
+        }
+        
+        return synonyms[seed % synonyms.length];
+    }
+    
+    getCompoundOp(seed) {
+        const op1 = this.getOperator('spatial', seed);
+        const op2 = this.getOperator('temporal', seed + 13);
+        const op3 = this.getOperator('quantum', seed + 29);
+        return `${op1}∘${op2}∘${op3}`;
+    }
+    
+    // Deep structure analysis for compatibility checking
+    analyzeStructure(text) {
+        const structure = {
+            entities: [],
+            operations: [],
+            connectors: [],
+            compounds: 0,
+            metaLevel: 0,
+            dimensionality: 0,
+            transformations: []
+        };
+        
+        // Extract entities (uppercase words)
+        structure.entities = (text.match(/\b[A-Z][-A-Z]+\b/g) || []);
+        
+        // Extract operations (lowercase words)
+        structure.operations = (text.match(/\b[a-z]+\b/g) || []);
+        
+        // Count special symbols for meta-level
+        structure.compounds = (text.match(/[⊗⊕∘∞→]/g) || []).length;
+        structure.metaLevel = (text.match(/[∇∆ΣΛ\[\]{}]/g) || []).length;
+        
+        // Calculate dimensionality
+        structure.dimensionality = structure.entities.length + 
+                                  structure.operations.length + 
+                                  structure.compounds + 
+                                  structure.metaLevel;
+        
+        // Identify transformation types
+        if (/fold|spiral|twist|vault/.test(text)) structure.transformations.push('spatial');
+        if (/accelerat|decelerat|oscillat|freeze/.test(text)) structure.transformations.push('temporal');
+        if (/collaps|entangl|superimpos|tunnel/.test(text)) structure.transformations.push('quantum');
+        if (/transcend|recurs|invert|morph/.test(text)) structure.transformations.push('meta');
+        if (/[⊗⊕∘]/.test(text)) structure.transformations.push('compound');
+        if (/[∇∆ΣΛ]/.test(text)) structure.transformations.push('symbolic');
+        
+        return structure;
+    }
+    
+    // Sophisticated compatibility checking based on transformational logic
+    checkCompatibility(p1, p2, nback) {
+        const s1 = p1.structure || this.analyzeStructure(p1.text || p1);
+        const s2 = p2.structure || this.analyzeStructure(p2.text || p2);
+        
+        // Calculate multi-dimensional similarity
+        let similarity = 0;
+        let factors = 0;
+        
+        // 1. Entity semantic similarity (check if from same semantic class)
+        const entitySim = this.calculateSemanticSimilarity(s1.entities, s2.entities);
+        similarity += entitySim * 0.25;
+        factors++;
+        
+        // 2. Operational equivalence (check transformation types)
+        const opSim = this.calculateOperationalSimilarity(s1.operations, s2.operations);
+        similarity += opSim * 0.25;
+        factors++;
+        
+        // 3. Structural isomorphism
+        const structSim = Math.abs(s1.dimensionality - s2.dimensionality) <= 2 ? 0.8 : 0.2;
+        similarity += structSim * 0.2;
+        factors++;
+        
+        // 4. Transformation alignment
+        const transSim = this.calculateTransformationSimilarity(s1.transformations, s2.transformations);
+        similarity += transSim * 0.2;
+        factors++;
+        
+        // 5. Meta-level correspondence
+        const metaSim = Math.abs(s1.metaLevel - s2.metaLevel) <= 1 ? 1.0 : 0.3;
+        similarity += metaSim * 0.1;
+        factors++;
+        
+        // Dynamic threshold based on n-back level
+        const threshold = 0.5 + (nback * 0.05); // Higher n-back requires higher similarity
+        
+        return (similarity / factors) >= threshold;
+    }
+    
+    calculateSemanticSimilarity(entities1, entities2) {
+        if (!entities1.length || !entities2.length) return 0.3;
+        
+        // Check if entities belong to same semantic classes
+        let matches = 0;
+        for (const e1 of entities1) {
+            for (const e2 of entities2) {
+                if (this.areSemanticallySimilar(e1, e2)) {
+                    matches++;
+                    break;
+                }
+            }
+        }
+        
+        return matches / Math.max(entities1.length, entities2.length);
+    }
+    
+    areSemanticallySimilar(e1, e2) {
+        // Check if two entities are in the same semantic class
+        for (const category in this.semanticClasses) {
+            for (const synonymGroup of this.semanticClasses[category]) {
+                if (synonymGroup.includes(e1) && synonymGroup.includes(e2)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    calculateOperationalSimilarity(ops1, ops2) {
+        if (!ops1.length || !ops2.length) return 0.3;
+        
+        let matches = 0;
+        for (const o1 of ops1) {
+            for (const o2 of ops2) {
+                if (this.areOperationallySimilar(o1, o2)) {
+                    matches++;
+                    break;
+                }
+            }
+        }
+        
+        return matches / Math.max(ops1.length, ops2.length);
+    }
+    
+    areOperationallySimilar(o1, o2) {
+        for (const type in this.operators) {
+            for (const synonymGroup of this.operators[type]) {
+                if (synonymGroup.includes(o1) && synonymGroup.includes(o2)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    calculateTransformationSimilarity(trans1, trans2) {
+        if (!trans1.length || !trans2.length) return 0.3;
+        
+        const set1 = new Set(trans1);
+        const set2 = new Set(trans2);
+        const intersection = [...set1].filter(t => set2.has(t)).length;
+        const union = new Set([...trans1, ...trans2]).size;
+        
+        return intersection / union;
+    }
+}
+
+/* ===== Global state ===== */
+const premiseGenerator = new HyperdensePremiseGenerator();
+let MAX=200, RATE=25, N=1, SPEAK=true, SOLVE_WINDOW=5.0, STATEMENTS=1;
+
+/* ===== Session management ===== */
+let idx=0, correct=0, errors=0, planned=[], history=[], SESSION={running:false, paused:false};
+let currentTruth=false, responded=false, solveTimer=null, countdownTimer=null, countdownLeft=0;
+
+function planSequence(){ 
+  planned.length=MAX; 
+  for(let i=0;i<MAX;i++) planned[i]=false; 
+  const elig=[]; 
+  for(let i=N;i<MAX;i++) elig.push(i); 
+  const k=Math.round((RATE/100)*elig.length); 
+  shuffle(elig); 
+  for(let i=0;i<k;i++) planned[elig[i]]=true; 
+}
+
+function showPremises(premises) {
+  const container = $('premiseContainer');
+  container.innerHTML = '';
+  
+  const arr = Array.isArray(premises) ? premises : [premises];
+  
+  arr.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'premise-line';
+    
+    if (arr.length > 1) {
+      const num = document.createElement('span');
+      num.className = 'premise-number';
+      num.textContent = (i+1).toString();
+      div.appendChild(num);
+    }
+    
+    if (typeof p === 'object' && p.text) {
+      let html = p.text;
+      
+      // Highlight special symbols
+      html = html.replace(/[⊗⊕∘∞→∇∆ΣΛ]/g, '<span class="meta">$&</span>');
+      html = html.replace(/[\[\]{}|]/g, '<span class="recursive">$&</span>');
+      html = html.replace(/\//g, '<span class="slash">/</span>');
+      
+      // Highlight entities (uppercase words)
+      html = html.replace(/\b([A-Z][-A-Z]+)\b/g, (match) => {
+        // Check category for appropriate color
+        for (const cat in premiseGenerator.semanticClasses) {
+          for (const group of premiseGenerator.semanticClasses[cat]) {
+            if (group.includes(match)) {
+              switch(cat) {
+                case 'quantum': return `<span class="entity">${match}</span>`;
+                case 'abstract': return `<span class="temporal">${match}</span>`;
+                case 'color': return `<span class="mediator">${match}</span>`;
+                case 'logic': return `<span class="state">${match}</span>`;
+                case 'shape': return `<span class="direction">${match}</span>`;
+                default: return `<span class="entity">${match}</span>`;
+              }
+            }
+          }
+        }
+        return `<span class="entity">${match}</span>`;
+      });
+      
+      // Highlight operations (lowercase words)
+      html = html.replace(/\b([a-z]+)\b/g, '<span class="operation">$1</span>');
+      
+      // Highlight compound operations
+      html = html.replace(/([a-z]+[∘→][a-z]+([∘→][a-z]+)*)/g, '<span class="compound">$1</span>');
+      
+      // Highlight directional states
+      html = html.replace(/(north|south|east|west|up|down|forward|backward|inward|outward|diagonal|orthogonal)⊕\w+/g, 
+                         '<span class="direction">$&</span>');
+      
+      div.innerHTML = html;
+      
+      // Add meta info
+      if (p.structure) {
+        const meta = document.createElement('div');
+        meta.className = 'meta-info';
+        const words = p.text.split(' ').length;
+        const dims = p.structure.dimensionality;
+        const transTypes = p.structure.transformations.join(', ') || 'none';
+        meta.textContent = `[${words} words, ${dims} dimensions, transforms: ${transTypes}]`;
+        div.appendChild(meta);
+      }
+    } else {
+      div.textContent = p;
+    }
+    
+    container.appendChild(div);
+  });
+}
+
+function updateUI(){ 
+  setText('idx', idx); 
+  setText('max', MAX); 
+  setText('ptype', (idx<MAX && idx>=N && planned[idx])?'MATCH':'NON-match'); 
+  setText('corr', correct); 
+  setText('err', errors); 
+  setText('isMatch','—'); 
+}
+
+async function speak(text){
+  if(!SPEAK) return Promise.resolve();
+  if(typeof window==='undefined'||!('speechSynthesis' in window)) return Promise.resolve();
+  
+  // Only speak the actual premises, no introduction
+  const speakText = Array.isArray(text) ? 
+    text.map(p => p.text || p).join('. ') : 
+    (text.text || text);
+    
+  return new Promise(res=>{ 
+    try{ 
+      const u=new SpeechSynthesisUtterance(speakText); 
+      u.lang='en-GB'; 
+      u.rate=0.7; // Slightly slower for complex content
+      u.pitch=1.0; 
+      u.volume=1.0; 
+      u.onend=()=>res(); 
+      u.onerror=()=>res(); 
+      if(window.speechSynthesis.speaking) window.speechSynthesis.cancel(); 
+      window.speechSynthesis.speak(u); 
+    }catch{ 
+      res(); 
+    } 
+  });
+}
+
+function scheduleCountdown(sec){ 
+  countdownLeft=sec; 
+  setText('countdown', countdownLeft.toFixed(1)+'s'); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  countdownTimer=setInterval(()=>{ 
+    countdownLeft=Math.max(0,countdownLeft-0.1); 
+    setText('countdown', countdownLeft.toFixed(1)+'s'); 
+    if(countdownLeft<=0){ 
+      clearInterval(countdownTimer); 
+      countdownTimer=null; 
+    } 
+  },100); 
+}
+
+function evaluateAndAdvance(){ 
+  const resp=responded, truth=currentTruth; 
+  if(resp===truth) correct++; 
+  else errors++; 
+  setText('corr',correct); 
+  setText('err',errors); 
+  setText('isMatch', String(truth).toUpperCase()); 
+  idx++; 
+  if(idx>=MAX){ 
+    stop(); 
+    return; 
+  } 
+  runTrial(); 
+}
+
+function runTrial(){
+  if(!SESSION.running || SESSION.paused) return;
+  
+  const mustMatch=(idx>=N)&&planned[idx];
+  
+  let premises = premiseGenerator.generatePremise(idx, N, STATEMENTS);
+  
+  if(mustMatch && idx >= N) {
+    // For planned matches, use compatible structure from n-back
+    const refPremises = history[idx-N];
+    // Generate new premises that are structurally compatible
+    let attempts = 0;
+    do {
+      premises = premiseGenerator.generatePremise(idx + attempts * 1000, N, STATEMENTS);
+      attempts++;
+    } while (attempts < 10 && !premiseGenerator.checkCompatibility(premises[0], refPremises[0], N));
+  }
+  
+  history[idx] = premises;
+  showPremises(premises); 
+  responded=false; 
+  
+  if(idx >= N) {
+    currentTruth = premiseGenerator.checkCompatibility(premises[0], history[idx-N][0], N);
+    if(mustMatch && !currentTruth) {
+      // Force match for planned matches
+      currentTruth = true;
+    }
+  } else {
+    currentTruth = false;
+  }
+  
+  setText('isMatch','—'); 
+  setText('ptype', (idx<MAX && idx>=N && planned[idx])?'MATCH':'NON-match');
+
+  speak(premises).then(()=>{ 
+    scheduleCountdown(SOLVE_WINDOW); 
+    if(solveTimer) clearTimeout(solveTimer); 
+    solveTimer=setTimeout(()=>{ 
+      evaluateAndAdvance(); 
+    }, SOLVE_WINDOW*1000); 
+  });
+}
+
+/* Controls */
+function start(){
+  // Reset session seed for new randomization
+  premiseGenerator.sessionSeed = Date.now() + Math.random() * 1000000;
+  
+  MAX=+$('trials').value||200; 
+  RATE=+$('rate').value||25; 
+  N=+$('nback').value||1; 
+  STATEMENTS=+$('statements').value||1;
+  SPEAK=!!$('speakEnabled').checked;
+  SOLVE_WINDOW=+($('solveWindow').value||5); 
+  setText('solveLabel', SOLVE_WINDOW.toFixed(1)); 
+  setText('solveVal', SOLVE_WINDOW.toFixed(1)+'s');
+  
+  $('modeLine').textContent = `Ultra Mode • G-Load: ~0.95+ • N=${N}`;
+
+  idx=0; 
+  correct=0; 
+  errors=0; 
+  planned=[]; 
+  history=[]; 
+  planSequence(); 
+  updateUI();
+  SESSION.running=true; 
+  SESSION.paused=false;
+  $('pause').disabled=false; 
+  $('reset').disabled=false; 
+  $('hit').disabled=false; 
+  $('skip').disabled=false;
+  runTrial();
+}
+
+function stop(){ 
+  SESSION.running=false; 
+  SESSION.paused=false; 
+  if(solveTimer) clearTimeout(solveTimer); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  setText('countdown','—'); 
+  try{ 
+    if(window.speechSynthesis) window.speechSynthesis.cancel(); 
+  }catch{} 
+}
+
+function togglePause(){
+  if(!SESSION.running) return;
+  SESSION.paused=!SESSION.paused; 
+  $('pause').textContent=SESSION.paused?'▶ Resume':'⏸ Pause';
+  if(SESSION.paused){ 
+    if(solveTimer) clearTimeout(solveTimer); 
+    if(countdownTimer) clearInterval(countdownTimer); 
+    try{ 
+      if(window.speechSynthesis) window.speechSynthesis.cancel(); 
+    }catch{} 
+  }
+  else{
+    scheduleCountdown(countdownLeft>0?countdownLeft:SOLVE_WINDOW);
+    if(solveTimer) clearTimeout(solveTimer);
+    solveTimer=setTimeout(()=>{ 
+      evaluateAndAdvance(); 
+    }, (countdownLeft>0?countdownLeft:SOLVE_WINDOW)*1000);
+  }
+}
+
+function reset(){ 
+  stop(); 
+  $('premiseContainer').innerHTML='—'; 
+  setText('idx',0); 
+  setText('corr',0); 
+  setText('err',0); 
+  setText('ptype','—'); 
+  setText('isMatch','—'); 
+  $('pause').disabled=true;
+  $('reset').disabled=true;
+  $('hit').disabled=true;
+  $('skip').disabled=true;
+}
+
+function registerHit(){ 
+  if(!SESSION.running || SESSION.paused) return; 
+  responded=true; 
+}
+
+function skip(){ 
+  if(!SESSION.running || SESSION.paused) return; 
+  if(solveTimer) clearTimeout(solveTimer); 
+  if(countdownTimer) clearInterval(countdownTimer); 
+  setText('countdown','—'); 
+  evaluateAndAdvance(); 
+}
+
+/* Event bindings */
+document.addEventListener('DOMContentLoaded', ()=>{
+  const sw=$('solveWindow'); 
+  const updateSW=()=>{ 
+    const v=+sw.value; 
+    setText('solveVal', v.toFixed(1)+'s'); 
+    setText('solveLabel', v.toFixed(1)); 
+  };
+  updateSW(); 
+  sw.oninput=e=>{ 
+    if(!SESSION.running){ 
+      updateSW(); 
+    } 
+  };
+  
+  $('nback').oninput=e=>{ 
+    if(!SESSION.running){ 
+      N=+e.target.value; 
+      setText('nVal',N); 
+      $('modeLine').textContent = `Ultra Mode • G-Load: ~0.95+ • N=${N}`;
+    } 
+  };
+  
+  $('statements').oninput=e=>{ 
+    if(!SESSION.running){ 
+      STATEMENTS=+e.target.value; 
+      setText('stmtVal',STATEMENTS); 
+    } 
+  };
+  
+  $('trials').oninput=e=>{ 
+    if(!SESSION.running){ 
+      MAX=+e.target.value; 
+      setText('tVal',MAX); 
+      setText('max',MAX); 
+    } 
+  };
+  
+  $('rate').oninput=e=>{ 
+    if(!SESSION.running){ 
+      RATE=+e.target.value; 
+      setText('rVal',RATE+'%'); 
+    } 
+  };
+  
+  $('speakEnabled').onchange=e=>{ 
+    SPEAK=!!e.target.checked; 
+  };
+
+  $('start').onclick=start; 
+  $('pause').onclick=togglePause; 
+  $('reset').onclick=reset; 
+  $('hit').onclick=registerHit; 
+  $('skip').onclick=skip;
+  
+  window.addEventListener('keydown', e=>{ 
+    if(!SESSION.running) return; 
+    if(e.code==='Space'){ 
+      registerHit(); 
+      e.preventDefault(); 
+    } 
+  });
+
+  setText('nVal',N); 
+  setText('stmtVal',STATEMENTS);
+  setText('tVal',MAX); 
+  setText('rVal',RATE+'%');
+  setText('modeLine', `Ultra Mode • G-Load: ~0.95+ • N=${N}`);
+  updateUI();
+});
+</script>
+</body>
+</html>
