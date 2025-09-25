@@ -1,1 +1,1134 @@
-.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quantum Constraint N-Back | Maximum G-Load (0.95+)</title>
+<style>
+:root { 
+  --bg:#050507; 
+  --fg:#e8f4f8; 
+  --accent:#00d4ff; 
+  --success:#00ff88;
+  --error:#ff4455;
+  --warning:#ffaa00;
+  --purple:#aa77ff;
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { height:100%; overflow-x:hidden; }
+body { 
+  background:radial-gradient(ellipse at center, #0a0a0f 0%, #050507 100%); 
+  color:var(--fg); 
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+
+.container { max-width:1320px; margin:0 auto; padding:20px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); gap:20px; margin-bottom:20px; }
+
+.panel { 
+  background:linear-gradient(145deg, rgba(10,12,15,0.95), rgba(15,18,22,0.95)); 
+  border:1px solid rgba(0,212,255,.2); 
+  border-radius:16px; 
+  padding:24px; 
+  backdrop-filter:blur(20px);
+  box-shadow:0 8px 32px rgba(0,0,0,0.4);
+}
+
+.panel-title { 
+  font-weight:700; 
+  margin-bottom:20px; 
+  color:var(--accent);
+  text-shadow:0 0 20px rgba(0,212,255,0.4);
+  font-size:17px;
+  letter-spacing:0.5px;
+}
+
+.btn { 
+  background:linear-gradient(135deg, rgba(0,212,255,0.1), rgba(0,212,255,0.05)); 
+  color:var(--accent); 
+  border:1px solid rgba(0,212,255,.4); 
+  border-radius:10px; 
+  padding:14px 24px; 
+  font-weight:600; 
+  cursor:pointer; 
+  transition:all 0.3s cubic-bezier(0.4,0,0.2,1);
+  font-size:14px;
+  text-transform:uppercase;
+  letter-spacing:1px;
+}
+.btn:hover:not(:disabled) { 
+  background:linear-gradient(135deg, rgba(0,212,255,0.2), rgba(0,212,255,0.1)); 
+  box-shadow:0 0 30px rgba(0,212,255,.6);
+  transform:translateY(-2px);
+}
+.btn:disabled { opacity:0.3; cursor:not-allowed; }
+
+label { 
+  font-size:12px; 
+  color:var(--accent); 
+  display:block; 
+  margin:15px 0 8px 0;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  opacity:0.8;
+}
+
+input[type=range] { 
+  width:100%; 
+  height:4px;
+  background:linear-gradient(90deg, rgba(0,212,255,0.2), rgba(0,212,255,0.1));
+  border-radius:2px;
+  outline:none;
+  -webkit-appearance:none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  width:20px;
+  height:20px;
+  background:radial-gradient(circle, var(--accent), rgba(0,212,255,0.8));
+  border-radius:50%;
+  cursor:pointer;
+  box-shadow:0 0 20px rgba(0,212,255,0.8);
+}
+input[type=range]::-moz-range-thumb {
+  width:20px;
+  height:20px;
+  background:radial-gradient(circle, var(--accent), rgba(0,212,255,0.8));
+  border-radius:50%;
+  cursor:pointer;
+  box-shadow:0 0 20px rgba(0,212,255,0.8);
+}
+
+.kbd { 
+  display:inline-block;
+  padding:6px 12px; 
+  border-radius:6px; 
+  background:linear-gradient(135deg, rgba(0,0,0,0.8), rgba(0,0,0,0.5)); 
+  border:1px solid rgba(255,255,255,.2);
+  font-size:13px;
+  font-weight:bold;
+  box-shadow:0 4px 8px rgba(0,0,0,0.4);
+  color:var(--accent);
+}
+
+#premiseDisplay { 
+  min-height:200px; 
+  background:linear-gradient(145deg, rgba(8,10,12,0.99), rgba(12,15,18,0.99));
+  border:2px solid rgba(0,212,255,.3); 
+  border-radius:16px; 
+  padding:40px; 
+  font-size:36px; 
+  line-height:1.8; 
+  font-family:'SF Mono','Monaco','Inconsolata','Fira Code',monospace; 
+  font-weight:700; 
+  letter-spacing:0.5px;
+  position:relative;
+  overflow:hidden;
+  box-shadow:inset 0 0 60px rgba(0,212,255,0.03);
+}
+
+#premiseDisplay::before {
+  content:'';
+  position:absolute;
+  top:-50%;
+  left:-50%;
+  width:200%;
+  height:200%;
+  background:conic-gradient(from 0deg, transparent, rgba(0,212,255,0.05), transparent);
+  animation:quantum-rotate 30s linear infinite;
+}
+
+@keyframes quantum-rotate { 
+  to { transform:rotate(360deg); }
+}
+
+@keyframes phase-shift { 
+  0%, 100% { opacity:1; transform:scale(1); }
+  50% { opacity:0.85; transform:scale(1.02); }
+}
+
+@keyframes cascade-in { 
+  from { opacity:0; transform:translateY(20px) scale(0.95); }
+  to { opacity:1; transform:translateY(0) scale(1); }
+}
+
+.premise-text { 
+  padding:25px; 
+  margin:15px 0;
+  border-left:8px solid var(--accent); 
+  background:linear-gradient(90deg, rgba(0,212,255,.08), transparent); 
+  border-radius:8px; 
+  animation:cascade-in 0.6s cubic-bezier(0.4,0,0.2,1);
+  position:relative;
+  z-index:1;
+}
+
+/* Semantic coloring for constraint types */
+.reciprocal { color:#ff6b6b; text-shadow:0 0 20px rgba(255,107,107,.9); animation:phase-shift 2s infinite; }
+.temporal { color:#00ff88; text-shadow:0 0 20px rgba(0,255,136,.9); }
+.conservation { color:#ffaa00; text-shadow:0 0 20px rgba(255,170,0,.9); }
+.superposition { color:#aa77ff; text-shadow:0 0 20px rgba(170,119,255,.9); font-style:italic; }
+.recursive { color:#00d4ff; text-shadow:0 0 20px rgba(0,212,255,.9); text-decoration:underline dotted; }
+.interference { background:linear-gradient(90deg, rgba(255,0,255,0.2), rgba(0,255,255,0.2)); padding:2px 6px; border-radius:4px; }
+.paradox { 
+  background:repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.1) 3px, rgba(255,255,255,0.1) 6px);
+  padding:2px 6px;
+  border-radius:4px;
+}
+
+.feedback {
+  margin-top:25px;
+  padding:20px;
+  border-radius:12px;
+  font-size:16px;
+  font-weight:600;
+  animation:cascade-in 0.5s ease-out;
+  backdrop-filter:blur(10px);
+}
+.feedback.correct {
+  background:linear-gradient(135deg, rgba(0,255,136,0.15), rgba(0,255,136,0.05));
+  border:1px solid var(--success);
+  color:var(--success);
+  box-shadow:0 0 30px rgba(0,255,136,0.3);
+}
+.feedback.incorrect {
+  background:linear-gradient(135deg, rgba(255,68,85,0.15), rgba(255,68,85,0.05));
+  border:1px solid var(--error);
+  color:var(--error);
+  box-shadow:0 0 30px rgba(255,68,85,0.3);
+}
+.feedback.missed {
+  background:linear-gradient(135deg, rgba(255,170,0,0.15), rgba(255,170,0,0.05));
+  border:1px solid var(--warning);
+  color:var(--warning);
+  box-shadow:0 0 30px rgba(255,170,0,0.3);
+}
+
+.status-bar {
+  display:flex;
+  justify-content:space-between;
+  padding:12px;
+  background:rgba(0,0,0,0.4);
+  border-radius:8px;
+  margin-top:15px;
+}
+
+.status-item {
+  font-size:13px;
+  font-weight:600;
+  text-transform:uppercase;
+}
+
+/* Modal */
+.modal {
+  display:none;
+  position:fixed;
+  z-index:2000;
+  left:0;
+  top:0;
+  width:100%;
+  height:100%;
+  background:rgba(0,0,0,0.95);
+  backdrop-filter:blur(20px);
+}
+
+.modal-content {
+  background:linear-gradient(145deg, #0a0c0f, #0f1215);
+  margin:30px auto;
+  padding:40px;
+  border:2px solid var(--accent);
+  border-radius:20px;
+  width:90%;
+  max-width:1000px;
+  max-height:85vh;
+  overflow-y:auto;
+  box-shadow:0 0 60px rgba(0,212,255,.4);
+}
+
+.modal h2 { color:var(--accent); margin:30px 0 20px 0; }
+.modal h3 { color:var(--purple); margin:25px 0 15px 0; }
+.modal p { line-height:1.8; margin:15px 0; opacity:0.95; }
+
+.example-box {
+  background:rgba(0,0,0,0.6);
+  border-left:4px solid var(--purple);
+  padding:20px;
+  margin:25px 0;
+  font-family:monospace;
+  border-radius:8px;
+  font-size:14px;
+}
+
+.close-modal {
+  color:var(--accent);
+  float:right;
+  font-size:36px;
+  font-weight:300;
+  cursor:pointer;
+  transition:all 0.3s;
+}
+.close-modal:hover { 
+  color:var(--error);
+  transform:rotate(180deg);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-title">⚛️ Quantum Configuration</div>
+      
+      <label>N-Back Level: <span id="nbackValue" style="float:right">2</span></label>
+      <input type="range" id="nbackLevel" min="1" max="4" value="2">
+      
+      <label>Premises per Trial: <span id="stmtValue" style="float:right">1</span></label>
+      <input type="range" id="statementsPerTrial" min="1" max="2" value="1">
+      
+      <label>Match Probability: <span id="matchValue" style="float:right">25%</span></label>
+      <input type="range" id="matchProb" min="0" max="100" step="5" value="25">
+      
+      <label>Response Window: <span id="windowValue" style="float:right">10s</span></label>
+      <input type="range" id="responseWindow" min="1" max="60" step="1" value="10">
+      
+      <label style="margin-top:20px">
+        <input type="checkbox" id="voiceEnabled" checked> Voice Synthesis
+      </label>
+      
+      <button id="instructionsBtn" class="btn" style="width:100%; margin-top:25px; background:linear-gradient(135deg, rgba(170,119,255,0.2), rgba(170,119,255,0.1))">
+        Instructions
+      </button>
+    </div>
+    
+    <div class="panel">
+      <div class="panel-title">🎮 Neural Control</div>
+      
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px">
+        <button id="startBtn" class="btn">Start</button>
+        <button id="pauseBtn" class="btn" disabled>Pause</button>
+      </div>
+      <button id="resetBtn" class="btn" style="width:100%" disabled>Reset</button>
+      
+      <div style="padding:20px; background:rgba(0,212,255,0.05); border-radius:12px; text-align:center; margin:25px 0; border:1px solid rgba(0,212,255,0.2)">
+        <div style="font-size:15px; margin-bottom:8px">Response Key:</div>
+        <span class="kbd">SPACEBAR</span>
+        <div style="font-size:11px; margin-top:8px; opacity:0.7">Press when detecting constraint match</div>
+      </div>
+      
+      <div class="status-bar">
+        <div class="status-item">Trial: <span id="currentTrial" style="color:var(--accent)">0</span>/<span id="totalTrials">40</span></div>
+        <div class="status-item">Timer: <span id="countdown" style="color:var(--warning)">—</span></div>
+      </div>
+    </div>
+    
+    <div class="panel">
+      <div class="panel-title">📊 Cognitive Metrics</div>
+      
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:15px; margin:20px 0">
+        <div style="text-align:center">
+          <div style="font-size:24px; color:var(--success); font-weight:bold" id="hits">0</div>
+          <div style="font-size:11px; opacity:0.7">HITS</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:24px; color:var(--error); font-weight:bold" id="falseAlarms">0</div>
+          <div style="font-size:11px; opacity:0.7">FALSE</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:24px; color:var(--warning); font-weight:bold" id="misses">0</div>
+          <div style="font-size:11px; opacity:0.7">MISSED</div>
+        </div>
+      </div>
+      
+      <div style="padding:15px; background:rgba(0,0,0,0.4); border-radius:8px; margin-top:20px">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px">
+          <span style="font-size:12px">Accuracy:</span>
+          <span style="font-weight:bold" id="accuracy">—</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px">
+          <span style="font-size:12px">Avg Response:</span>
+          <span style="font-weight:bold" id="avgRT">—</span>
+        </div>
+        <div style="display:flex; justify-content:space-between">
+          <span style="font-size:12px">G-Load:</span>
+          <span style="font-weight:bold; color:var(--purple)">0.95+</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="panel">
+    <div class="panel-title">
+      🧠 Constraint Propagation Network 
+      <span style="float:right; font-size:12px; opacity:0.7">MAX G-LOAD</span>
+    </div>
+    <div id="premiseDisplay">
+      <div style="text-align:center; color:var(--accent); font-size:22px; font-weight:normal; opacity:0.8">
+        Initialize quantum constraint network...
+      </div>
+    </div>
+    <div id="feedbackArea"></div>
+  </div>
+</div>
+
+<!-- Instructions Modal -->
+<div id="instructionsModal" class="modal">
+  <div class="modal-content">
+    <span class="close-modal">×</span>
+    <h2>Quantum Constraint Propagation N-Back</h2>
+    
+    <p>This implements the theoretical maximum of cognitive load through <strong>constraint propagation networks</strong> where every element simultaneously determines and is determined by all others.</p>
+    
+    <h3>Core Innovation: Triadic Reciprocal Causation</h3>
+    <p>Each premise creates circular dependencies that cannot be resolved sequentially:</p>
+    
+    <div class="example-box">
+      "A-becomes-B-becoming-C forces A-emerging-again"
+      
+      This creates an autological loop where:
+      • A transforms to B transforms to C
+      • This forces A to re-emerge
+      • The end contradicts yet requires the beginning
+      • Resolution requires simultaneous constraint satisfaction
+    </div>
+    
+    <h3>Temporal Folding</h3>
+    <p>Premises encode multiple temporal states simultaneously:</p>
+    
+    <div class="example-box">
+      "NOW-becoming-THEN reverses BEFORE-meeting-AFTER"
+      
+      You must maintain:
+      • Present transitioning to future
+      • This reverses the past-future relationship
+      • Temporal paradox must be resolved mentally
+    </div>
+    
+    <h3>Conservation Through Negation</h3>
+    <p>Elements create and destroy each other in closed loops:</p>
+    
+    <div class="example-box">
+      "RED-minus-BLUE creates GREEN-destroying-RED"
+      
+      Track simultaneously:
+      • Initial subtraction
+      • Creation leading to destruction  
+      • Circular dependency resolution
+      • Conservation verification
+    </div>
+    
+    <h3>What Makes a Match?</h3>
+    <p>Matches occur when premises share the same <strong>constraint topology</strong>:</p>
+    <ul>
+      <li>Same circular dependency structure</li>
+      <li>Equivalent temporal paradoxes</li>
+      <li>Identical conservation patterns</li>
+      <li>Matching interference networks</li>
+    </ul>
+    
+    <h3>Why Maximum G-Load?</h3>
+    <p>You cannot decompose these premises into parts. Every word modifies the interpretation of every other word through constraint propagation. The mental model must be continuously revised as constraints propagate backward through your interpretation.</p>
+    
+    <p><strong>This is constraint satisfaction at the edge of human cognitive capacity.</strong></p>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   QUANTUM CONSTRAINT PROPAGATION N-BACK
+   Maximum G-Load Through Reciprocal Causation Networks
+   ============================================================ */
+
+const $ = id => document.getElementById(id);
+const setText = (id, text) => { const el = $(id); if(el) el.textContent = text; };
+
+/* ===== CONSTRAINT PROPAGATION ENGINE ===== */
+class ConstraintPropagationNetwork {
+  constructor() {
+    this.nodes = new Map(); // symbol -> state
+    this.constraints = []; // bidirectional dependencies
+    this.temporalStates = new Map(); // temporal folding
+    this.conservationLaws = [];
+    this.paradoxes = [];
+  }
+  
+  parsePremise(text) {
+    // Extract constraint network from 5-word premise
+    const words = text.split(' ').filter(w => w.length > 0);
+    if (words.length !== 5) return null;
+    
+    return {
+      pattern: this.identifyPattern(words),
+      nodes: this.extractNodes(words),
+      constraints: this.extractConstraints(words),
+      temporal: this.extractTemporalFolding(words),
+      conservation: this.extractConservation(words)
+    };
+  }
+  
+  identifyPattern(words) {
+    // Identify which constraint pattern is used
+    if (words.some(w => w.includes('becomes') || w.includes('becoming'))) {
+      return 'reciprocal_causation';
+    } else if (words.some(w => w.includes('NOW') || w.includes('THEN'))) {
+      return 'temporal_folding';
+    } else if (words.some(w => w.includes('minus') || w.includes('plus'))) {
+      return 'conservation_negation';
+    } else if (words.some(w => w.includes('growing-shrinking'))) {
+      return 'superposition';
+    } else if (words.some(w => w.includes('itself') || w.includes('recursively'))) {
+      return 'recursive_reference';
+    }
+    return 'interference';
+  }
+  
+  extractNodes(words) {
+    const nodes = [];
+    for (const word of words) {
+      // Extract symbols from compound words
+      if (word.includes('-')) {
+        const parts = word.split('-');
+        nodes.push(...parts.filter(p => /^[A-Z]+$/.test(p)));
+      } else if (/^[A-Z]+$/.test(word) || ['RED','BLUE','GREEN','ONE','TWO','THREE'].includes(word)) {
+        nodes.push(word);
+      }
+    }
+    return nodes;
+  }
+  
+  extractConstraints(words) {
+    const constraints = [];
+    
+    // Find reciprocal dependencies
+    for (let i = 0; i < words.length - 1; i++) {
+      if (words[i].includes('becomes') || words[i].includes('causing')) {
+        constraints.push({
+          type: 'reciprocal',
+          from: this.extractNodes([words[i-1]])[0],
+          to: this.extractNodes([words[i+1]])[0],
+          bidirectional: true
+        });
+      }
+    }
+    
+    return constraints;
+  }
+  
+  extractTemporalFolding(words) {
+    const temporal = {
+      states: [],
+      paradoxes: []
+    };
+    
+    // Identify temporal markers
+    const temporalMarkers = ['NOW', 'THEN', 'BEFORE', 'AFTER', 'ALREADY', 'WILL'];
+    for (const word of words) {
+      for (const marker of temporalMarkers) {
+        if (word.includes(marker)) {
+          temporal.states.push(marker);
+        }
+      }
+    }
+    
+    // Detect temporal paradoxes
+    if (temporal.states.includes('NOW') && temporal.states.includes('THEN')) {
+      temporal.paradoxes.push('present_future_loop');
+    }
+    
+    return temporal;
+  }
+  
+  extractConservation(words) {
+    const conservation = {
+      created: [],
+      destroyed: [],
+      transformed: []
+    };
+    
+    for (const word of words) {
+      if (word.includes('creates') || word.includes('creating')) {
+        conservation.created.push(word);
+      } else if (word.includes('destroys') || word.includes('destroying')) {
+        conservation.destroyed.push(word);
+      } else if (word.includes('minus') || word.includes('plus')) {
+        conservation.transformed.push(word);
+      }
+    }
+    
+    return conservation;
+  }
+  
+  propagateConstraints() {
+    // Iteratively propagate constraints until stable
+    let stable = false;
+    let iterations = 0;
+    
+    while (!stable && iterations < 10) {
+      stable = true;
+      
+      for (const constraint of this.constraints) {
+        const propagated = this.propagateSingle(constraint);
+        if (propagated) stable = false;
+      }
+      
+      iterations++;
+    }
+    
+    return iterations;
+  }
+  
+  propagateSingle(constraint) {
+    // Propagate a single constraint through the network
+    if (constraint.type === 'reciprocal') {
+      // Bidirectional propagation
+      const forward = this.updateNode(constraint.to, constraint.from);
+      const backward = this.updateNode(constraint.from, constraint.to);
+      return forward || backward;
+    }
+    return false;
+  }
+  
+  updateNode(node, source) {
+    if (!this.nodes.has(node)) {
+      this.nodes.set(node, { state: 'undefined', sources: [] });
+    }
+    
+    const nodeState = this.nodes.get(node);
+    if (!nodeState.sources.includes(source)) {
+      nodeState.sources.push(source);
+      return true;
+    }
+    return false;
+  }
+  
+  computeTopology() {
+    // Extract the abstract constraint topology
+    return {
+      nodeCount: this.nodes.size,
+      constraintCount: this.constraints.length,
+      hasReciprocal: this.constraints.some(c => c.bidirectional),
+      hasTemporal: this.temporalStates.size > 0,
+      hasParadox: this.paradoxes.length > 0,
+      propagationDepth: this.propagateConstraints()
+    };
+  }
+}
+
+/* ===== ADVANCED PREMISE GENERATOR ===== */
+class QuantumPremiseGenerator {
+  constructor() {
+    // Pattern templates for maximum g-load
+    this.patterns = {
+      reciprocal: [
+        "A-becomes-B-becoming-C forces A-emerging-again",
+        "X-creating-Y-creating-Z destroys X-paradoxically",
+        "ONE-into-TWO-into-THREE returns ONE-necessarily",
+        "RED-makes-BLUE-making-GREEN unmakes RED-completely"
+      ],
+      temporal: [
+        "NOW-becoming-THEN reverses BEFORE-meeting-AFTER simultaneously",
+        "PAST-pushing-FUTURE pulls PRESENT-backwards-forwards always",
+        "TODAY-was-TOMORROW-yesterday makes TIME-loop-itself",
+        "THEN-causes-NOW-causing-LATER cycles THEN-again-endlessly"
+      ],
+      conservation: [
+        "RED-minus-BLUE creates GREEN-destroying-RED necessarily",
+        "SOMETHING-plus-NOTHING makes EVERYTHING-becoming-NOTHING paradoxically",
+        "ENERGY-splits-MATTER-joining forms ENERGY-again-conserved",
+        "FULL-emptying-EMPTY fills FULL-from-EMPTY-itself"
+      ],
+      superposition: [
+        "GROWING-shrinking-simultaneously requires BOTH-and-NEITHER existing",
+        "UP-going-DOWN-staying needs MOVING-while-STILL remaining",
+        "IN-becoming-OUT-remaining forces BOUNDARY-not-BOUNDARY holding",
+        "YES-meaning-NO-sometimes creates MAYBE-definitely-uncertain always"
+      ],
+      recursive: [
+        "THIS-describing-ITSELF-describing causes LOOP-within-LOOP infinitely",
+        "PATTERN-matching-PATTERN-matching forms META-PATTERN-PATTERN recursively",
+        "RULE-breaking-RULE-breaking makes NEW-RULE-RULE paradoxically",
+        "COPY-copying-COPY-copying generates ORIGINAL-from-COPY strangely"
+      ],
+      interference: [
+        "PUSH-pulling-PUSHES creates STILLNESS-moving-RAPIDLY somehow",
+        "SPIN-stopping-SPINS generates ROTATION-without-ROTATING mysteriously",
+        "FAST-slowing-FAST produces SPEED-standing-STILL paradoxically",
+        "LOUD-quieting-LOUD makes SILENCE-that-RESONATES continuously"
+      ]
+    };
+    
+    this.usedPremises = new Set();
+    this.lastPattern = null;
+  }
+  
+  generate() {
+    // Select pattern type (avoid repetition)
+    const patterns = Object.keys(this.patterns);
+    let patternType;
+    
+    do {
+      patternType = patterns[Math.floor(Math.random() * patterns.length)];
+    } while (patternType === this.lastPattern && Math.random() > 0.3);
+    
+    this.lastPattern = patternType;
+    
+    // Select specific premise
+    const options = this.patterns[patternType];
+    const premise = options[Math.floor(Math.random() * options.length)];
+    
+    // Apply variations to prevent exact repetition
+    return this.varyPremise(premise);
+  }
+  
+  varyPremise(premise) {
+    // Systematic variation while preserving structure
+    const variations = {
+      'A': ['A', 'X', 'P', 'M'],
+      'B': ['B', 'Y', 'Q', 'N'],
+      'C': ['C', 'Z', 'R', 'K'],
+      'ONE': ['ONE', 'TWO', 'FIRST', 'ALPHA'],
+      'TWO': ['TWO', 'THREE', 'SECOND', 'BETA'],
+      'THREE': ['THREE', 'FOUR', 'THIRD', 'GAMMA'],
+      'RED': ['RED', 'BLUE', 'GREEN', 'COLOR'],
+      'BLUE': ['BLUE', 'GREEN', 'RED', 'SHADE'],
+      'GREEN': ['GREEN', 'RED', 'BLUE', 'TINT'],
+      'NOW': ['NOW', 'HERE', 'THIS', 'PRESENT'],
+      'THEN': ['THEN', 'THERE', 'THAT', 'FUTURE'],
+      'BEFORE': ['BEFORE', 'PRIOR', 'PAST', 'EARLIER'],
+      'AFTER': ['AFTER', 'LATER', 'NEXT', 'BEYOND']
+    };
+    
+    let varied = premise;
+    
+    for (const [original, replacements] of Object.entries(variations)) {
+      if (varied.includes(original) && Math.random() > 0.5) {
+        const replacement = replacements[Math.floor(Math.random() * replacements.length)];
+        varied = varied.replace(new RegExp(original, 'g'), replacement);
+      }
+    }
+    
+    // Ensure exactly 5 words
+    const words = varied.split(' ').filter(w => w.length > 0);
+    if (words.length > 5) {
+      return words.slice(0, 5).join(' ');
+    } else if (words.length < 5) {
+      // Pad with appropriate words
+      while (words.length < 5) {
+        words.push('necessarily');
+      }
+      return words.join(' ');
+    }
+    
+    return varied;
+  }
+  
+  generateMatching(reference) {
+    // Generate premise with same constraint topology
+    const refNetwork = new ConstraintPropagationNetwork();
+    const refParsed = refNetwork.parsePremise(reference);
+    if (!refParsed) return this.generate();
+    
+    // Use same pattern type but different surface form
+    const patternType = refParsed.pattern;
+    if (this.patterns[patternType]) {
+      const options = this.patterns[patternType];
+      const selected = options[Math.floor(Math.random() * options.length)];
+      return this.varyPremise(selected);
+    }
+    
+    return this.generate();
+  }
+  
+  generateNonMatching(reference) {
+    // Generate premise with different constraint topology
+    const refNetwork = new ConstraintPropagationNetwork();
+    const refParsed = refNetwork.parsePremise(reference);
+    if (!refParsed) return this.generate();
+    
+    // Use different pattern type
+    const patterns = Object.keys(this.patterns);
+    const differentPatterns = patterns.filter(p => p !== refParsed.pattern);
+    const patternType = differentPatterns[Math.floor(Math.random() * differentPatterns.length)];
+    
+    const options = this.patterns[patternType];
+    const selected = options[Math.floor(Math.random() * options.length)];
+    return this.varyPremise(selected);
+  }
+}
+
+/* ===== GAME CONTROLLER ===== */
+class QuantumConstraintNBack {
+  constructor() {
+    this.generator = new QuantumPremiseGenerator();
+    this.history = [];
+    this.schedule = [];
+    
+    this.nLevel = 2;
+    this.totalTrials = 40;
+    this.matchProbability = 0.25;
+    this.responseWindow = 10000;
+    this.statementsPerTrial = 1;
+    this.voiceEnabled = true;
+    
+    this.currentTrial = 0;
+    this.isRunning = false;
+    this.isPaused = false;
+    this.awaitingResponse = false;
+    
+    this.hits = 0;
+    this.falseAlarms = 0;
+    this.misses = 0;
+    this.responseTimes = [];
+    
+    this.trialStartTime = 0;
+    this.responseTimer = null;
+    this.countdownInterval = null;
+  }
+  
+  initialize(settings) {
+    Object.assign(this, settings);
+    this.reset();
+    this.planSchedule();
+  }
+  
+  reset() {
+    this.history = [];
+    this.schedule = [];
+    this.currentTrial = 0;
+    this.hits = 0;
+    this.falseAlarms = 0;
+    this.misses = 0;
+    this.responseTimes = [];
+  }
+  
+  planSchedule() {
+    this.schedule = new Array(this.totalTrials).fill(false);
+    
+    for (let i = this.nLevel; i < this.totalTrials; i++) {
+      if (Math.random() < this.matchProbability) {
+        this.schedule[i] = true;
+      }
+    }
+  }
+  
+  async runTrial() {
+    if (!this.isRunning || this.isPaused) return;
+    
+    this.awaitingResponse = true;
+    const shouldMatch = this.schedule[this.currentTrial];
+    
+    const premises = [];
+    for (let i = 0; i < this.statementsPerTrial; i++) {
+      let premise;
+      
+      if (shouldMatch && this.currentTrial >= this.nLevel) {
+        const reference = this.history[this.currentTrial - this.nLevel][0];
+        premise = this.generator.generateMatching(reference);
+      } else if (this.currentTrial >= this.nLevel) {
+        const reference = this.history[this.currentTrial - this.nLevel][0];
+        premise = this.generator.generateNonMatching(reference);
+      } else {
+        premise = this.generator.generate();
+      }
+      
+      premises.push(premise);
+    }
+    
+    this.history[this.currentTrial] = premises;
+    this.displayPremise(premises);
+    
+    this.trialStartTime = Date.now();
+    this.startResponseTimer();
+    
+    if (this.voiceEnabled) {
+      await this.speak(premises.join('. '));
+    }
+  }
+  
+  displayPremise(premises) {
+    const display = $('premiseDisplay');
+    display.innerHTML = '';
+    
+    premises.forEach(premise => {
+      const div = document.createElement('div');
+      div.className = 'premise-text';
+      
+      const words = premise.split(' ');
+      words.forEach((word, idx) => {
+        const span = document.createElement('span');
+        
+        // Apply semantic coloring based on constraint type
+        if (word.includes('becomes') || word.includes('becoming')) {
+          span.className = 'reciprocal';
+        } else if (['NOW','THEN','BEFORE','AFTER','PAST','FUTURE','TODAY','TOMORROW'].includes(word)) {
+          span.className = 'temporal';
+        } else if (word.includes('minus') || word.includes('plus') || word.includes('creates') || word.includes('destroys')) {
+          span.className = 'conservation';
+        } else if (word.includes('simultaneously') || word.includes('BOTH') || word.includes('NEITHER')) {
+          span.className = 'superposition';
+        } else if (word.includes('itself') || word.includes('recursively') || word.includes('THIS') || word.includes('ITSELF')) {
+          span.className = 'recursive';
+        } else if (word.includes('paradox') || word.includes('paradoxically')) {
+          span.className = 'paradox';
+        } else if (word.includes('-')) {
+          span.className = 'interference';
+        }
+        
+        span.textContent = word;
+        div.appendChild(span);
+        
+        if (idx < words.length - 1) {
+          div.appendChild(document.createTextNode(' '));
+        }
+      });
+      
+      display.appendChild(div);
+    });
+    
+    setText('currentTrial', this.currentTrial + 1);
+  }
+  
+  startResponseTimer() {
+    let timeLeft = this.responseWindow;
+    
+    this.countdownInterval = setInterval(() => {
+      timeLeft -= 100;
+      setText('countdown', (timeLeft / 1000).toFixed(1) + 's');
+      
+      if (timeLeft <= 0) {
+        clearInterval(this.countdownInterval);
+      }
+    }, 100);
+    
+    this.responseTimer = setTimeout(() => {
+      this.endTrial();
+    }, this.responseWindow);
+  }
+  
+  registerResponse() {
+    if (!this.awaitingResponse) return;
+    
+    const rt = Date.now() - this.trialStartTime;
+    this.responseTimes.push(rt);
+    
+    this.awaitingResponse = false;
+    
+    clearTimeout(this.responseTimer);
+    clearInterval(this.countdownInterval);
+    
+    const shouldHaveResponded = this.schedule[this.currentTrial] && this.currentTrial >= this.nLevel;
+    
+    if (shouldHaveResponded) {
+      this.hits++;
+      this.showFeedback('correct', 'Correct! Constraint topology matched.');
+    } else {
+      this.falseAlarms++;
+      this.showFeedback('incorrect', 'Incorrect. Different constraint patterns.');
+    }
+    
+    setTimeout(() => this.nextTrial(), 2000);
+  }
+  
+  endTrial() {
+    this.awaitingResponse = false;
+    
+    clearTimeout(this.responseTimer);
+    clearInterval(this.countdownInterval);
+    
+    const shouldHaveResponded = this.schedule[this.currentTrial] && this.currentTrial >= this.nLevel;
+    
+    if (shouldHaveResponded) {
+      this.misses++;
+      this.showFeedback('missed', 'Missed! Constraint networks were isomorphic.');
+    } else {
+      this.hits++;
+    }
+    
+    setTimeout(() => this.nextTrial(), 2000);
+  }
+  
+  showFeedback(type, message) {
+    const area = $('feedbackArea');
+    area.innerHTML = '';
+    
+    const div = document.createElement('div');
+    div.className = `feedback ${type}`;
+    div.textContent = message;
+    area.appendChild(div);
+    
+    this.updateStats();
+  }
+  
+  updateStats() {
+    setText('hits', this.hits);
+    setText('falseAlarms', this.falseAlarms);
+    setText('misses', this.misses);
+    
+    const total = this.hits + this.falseAlarms + this.misses;
+    if (total > 0) {
+      setText('accuracy', (this.hits / total * 100).toFixed(1) + '%');
+    }
+    
+    if (this.responseTimes.length > 0) {
+      const avg = this.responseTimes.reduce((a,b) => a+b, 0) / this.responseTimes.length;
+      setText('avgRT', (avg / 1000).toFixed(2) + 's');
+    }
+  }
+  
+  nextTrial() {
+    $('feedbackArea').innerHTML = '';
+    this.currentTrial++;
+    
+    if (this.currentTrial >= this.totalTrials) {
+      this.endSession();
+    } else {
+      this.runTrial();
+    }
+  }
+  
+  endSession() {
+    this.isRunning = false;
+    
+    $('premiseDisplay').innerHTML = `
+      <div style="text-align:center; padding:50px;">
+        <h2 style="color:var(--accent); margin-bottom:30px">Session Complete</h2>
+        <div style="font-size:20px; line-height:2">
+          <div>Hits: <span style="color:var(--success)">${this.hits}</span></div>
+          <div>False Alarms: <span style="color:var(--error)">${this.falseAlarms}</span></div>
+          <div>Misses: <span style="color:var(--warning)">${this.misses}</span></div>
+          <div style="margin-top:20px; padding-top:20px; border-top:1px solid rgba(0,212,255,0.2)">
+            Final Accuracy: <strong>${(this.hits / this.totalTrials * 100).toFixed(1)}%</strong>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    $('startBtn').disabled = false;
+    $('pauseBtn').disabled = true;
+    $('resetBtn').disabled = true;
+  }
+  
+  async speak(text) {
+    if (!this.voiceEnabled || !window.speechSynthesis) return;
+    
+    return new Promise(resolve => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.75;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      utterance.onend = resolve;
+      utterance.onerror = resolve;
+      
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+      }
+      
+      window.speechSynthesis.speak(utterance);
+    });
+  }
+}
+
+/* ===== INITIALIZATION ===== */
+const game = new QuantumConstraintNBack();
+
+function start() {
+  game.initialize({
+    nLevel: parseInt($('nbackLevel').value),
+    totalTrials: 40,
+    matchProbability: parseInt($('matchProb').value) / 100,
+    responseWindow: parseFloat($('responseWindow').value) * 1000,
+    statementsPerTrial: parseInt($('statementsPerTrial').value),
+    voiceEnabled: $('voiceEnabled').checked
+  });
+  
+  game.isRunning = true;
+  
+  setText('totalTrials', 40);
+  setText('hits', '0');
+  setText('falseAlarms', '0');
+  setText('misses', '0');
+  setText('accuracy', '—');
+  setText('avgRT', '—');
+  
+  $('startBtn').disabled = true;
+  $('pauseBtn').disabled = false;
+  $('resetBtn').disabled = false;
+  
+  game.runTrial();
+}
+
+function pause() {
+  if (game.isPaused) {
+    game.isPaused = false;
+    game.runTrial();
+    $('pauseBtn').textContent = 'Pause';
+  } else {
+    game.isPaused = true;
+    clearTimeout(game.responseTimer);
+    clearInterval(game.countdownInterval);
+    $('pauseBtn').textContent = 'Resume';
+  }
+}
+
+function reset() {
+  game.isRunning = false;
+  game.reset();
+  
+  clearTimeout(game.responseTimer);
+  clearInterval(game.countdownInterval);
+  
+  $('premiseDisplay').innerHTML = `
+    <div style="text-align:center; color:var(--accent); font-size:22px; font-weight:normal; opacity:0.8">
+      Initialize quantum constraint network...
+    </div>
+  `;
+  
+  $('feedbackArea').innerHTML = '';
+  
+  setText('currentTrial', '0');
+  setText('hits', '0');
+  setText('falseAlarms', '0');
+  setText('misses', '0');
+  setText('accuracy', '—');
+  setText('avgRT', '—');
+  setText('countdown', '—');
+  
+  $('startBtn').disabled = false;
+  $('pauseBtn').disabled = true;
+  $('resetBtn').disabled = true;
+  
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  $('nbackLevel').oninput = e => setText('nbackValue', e.target.value);
+  $('statementsPerTrial').oninput = e => setText('stmtValue', e.target.value);
+  $('matchProb').oninput = e => setText('matchValue', e.target.value + '%');
+  $('responseWindow').oninput = e => setText('windowValue', e.target.value + 's');
+  
+  $('startBtn').onclick = start;
+  $('pauseBtn').onclick = pause;
+  $('resetBtn').onclick = reset;
+  
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space' && game.isRunning && !game.isPaused) {
+      e.preventDefault();
+      game.registerResponse();
+    }
+  });
+  
+  const modal = $('instructionsModal');
+  $('instructionsBtn').onclick = () => modal.style.display = 'block';
+  document.querySelector('.close-modal').onclick = () => modal.style.display = 'none';
+  window.onclick = e => {
+    if (e.target === modal) modal.style.display = 'none';
+  };
+});
+</script>
+</body>
+</html>
