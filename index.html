@@ -212,6 +212,41 @@ const Entangle = (function(){
 </script>
 
 <script>
+const HiMask = (function(){
+  // Angle catalog extends with modulo over 360
+  function angleFor(d){ const map={2:36,3:54,4:72,5:108,6:144,7:180,8:216,9:252,10:288,11:324,12:342}; return map[d]||((d*36)%360); }
+  function weightFor(d){ return Math.max(2, Math.min(12, d)); }
+  function isPrime(n){ if(n<2) return false; for(let i=2;i*i<=n;i++) if(n%i===0) return false; return true; }
+  function applyLocal(s,d){
+    let out = T.mul(s, weightFor(d));
+    out = T.rotate(out, angleFor(d));                      // micro-rotation always
+    if (d%2===0) out = T.invert(out);                      // parity on even
+    if (isPrime(d)) out = T.powLevel(out,1);               // level on prime
+    if (d%3===0) out = {...out, phase:(out.phase+45)%360}; // phase on multiples of 3
+    return out;
+  }
+  // Pairwise entanglement: two suffix digits in one premise produce a coupling
+  // If gcd(d1,d2)==1 → concurrency pressure; if divisible → collinearity pressure.
+  function couple(S, L1, d1, L2, d2){
+    const g = (function gcd(a,b){return b?gcd(b,a%b):a;})(d1,d2);
+    if (g===1){
+      // draw both toward origin midpoint (concurrency proxy)
+      const m={pos:{x:0,y:0}};
+      S[L1] = T.projectToLineUV(S[L1], m, {pos:{x:1,y:0}});
+      S[L2] = T.projectToLineUV(S[L2], m, {pos:{x:0,y:1}});
+    } else {
+      // enforce collinearity along hashed axis
+      const axis = (d1+d2)%2 ? {pos:{x:1,y:0}} : {pos:{x:0,y:1}};
+      const U={pos:{x:0,y:0}}, V=axis;
+      S[L1] = T.projectToLineUV(S[L1], U, V);
+      S[L2] = T.projectToLineUV(S[L2], U, V);
+    }
+  }
+  return { applyLocal, couple, angleFor, weightFor };
+})();
+</script>
+
+<script>
 
   // ---- Cross-trial rotation context counter ----
   window.RotCtx = { recent:0, bump(){ this.recent=Math.min(2,this.recent+1); }, decay(){ this.recent=Math.max(0,this.recent-1);} };
@@ -254,7 +289,7 @@ const Entangle = (function(){
 
     function structSig(txt){
       const t = txt
-        .replace(/\b[A-Z]\d?\b/g,'L')
+        .replace(/\b[A-Z]\d{0,2}\b/g,'L')
         .replace(/√L/g,'SQRT')
         .replace(/rotate(\d+)/ig,'ROT$1')
         .replace(/\breflect\b/ig,'REF')
@@ -431,23 +466,21 @@ const Entangle = (function(){
   const ArithGen=(function(){
     function build(r){
       const LTRS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''); const BIN=['+','−','×','÷'];
-      const pick=L=>L[Math.floor(r()*L.length)];
-      const L=()=>pick(LTRS);
-      const d=()=> (r()<0.65 ? String(2+Math.floor(r()*5)) : '');
-      const form = r()<0.5 ? 1 : 2;
-      if (form===1){
-        // 3–5 tokens: √A op Bk  or  inverted A op Bk
+      const pick=L=>L[Math.floor(r()*L.length)]; const L=()=>pick(LTRS);
+      const d=()=> String(2+Math.floor(r()*11)); // 2..12
+      if (r()<0.55){
+        // 3–5 tokens: √A op Bk   or  inverted A op Bk
         const a = (r()<0.5? '√':'inverted ') + L();
         const op = pick(BIN);
-        const b = L() + d();
+        const b = L()+d();
         return sanitizeText(`${a} ${op} ${b}`);
       } else {
-        // 5–6 tokens: A^k op Bk op (√C | inverted C)
+        // 5–6 tokens: A^k op Bk op (√C | inverted Ck)
         const a = L() + '^' + (2+Math.floor(r()*3));
         const op1 = pick(BIN);
-        const b = L() + d();
+        const b = L()+d();
         const op2 = pick(BIN);
-        const tail = (r()<0.5? `√${L()}` : `inverted ${L()}`);
+        const tail = (r()<0.5? `√${L()}` : `inverted ${L()+d()}`);
         return sanitizeText(`${a} ${op1} ${b} ${op2} ${tail}`);
       }
     }
@@ -475,6 +508,12 @@ const Entangle = (function(){
   function applyGeomPremise(S0, text){
     const S = cloneStore(S0);
     const touched = lettersTouched(text);
+    const digs = (text.match(/\b([A-Z])(\d{1,2})\b/g)||[])
+                 .map(s=>parseInt(s.replace(/^[A-Z]/,''),10))
+                 .sort((a,b)=>a-b);
+    function phi(n){ const i=( (n*17 + (Date.now()&255)) % 26 ); return String.fromCharCode(65+i); }
+    let hashedL=null, hashedR=null;
+    if (digs.length>=2){ hashedL=phi(digs[0]); hashedR=phi(digs[1]); }
     const r = /(\brotate(\d+)\b)|(\breflect\b)|(\bscale(\d+)\b)|(\bproject\b)|(\bmidpoint\b)|(\b(north|south|east|west|northeast|northwest|southeast|southwest)\b)|(\bbisects\b)|(\bsame line\b)/i;
     // Minimal deterministic effects tied to keywords:
     if(/rotate(\d+)/i.test(text)){
@@ -497,15 +536,16 @@ const Entangle = (function(){
     if(/\bproject\b/i.test(text) && /line\s+([A-Z])\s*,\s*([A-Z])/i.test(text)){
       const m = /line\s+([A-Z])\s*,\s*([A-Z])/i.exec(text);
       const L1 = m[1], L2 = m[2];
-      const P1=S[L1], P2=S[L2];
+      const P1=S[hashedL||L1], P2=S[hashedR||L2];
       for(const L of touched){ if(L!==L1 && L!==L2){ S[L]=T.projectToLineUV(S[L],P1,P2);} }
     }
     if(/\breflect\b/i.test(text) && /across\s+line\s+([A-Z])\s*,\s*([A-Z])/i.test(text)){
       const m = /across\s+line\s+([A-Z])\s*,\s*([A-Z])/i.exec(text);
       const L1 = m[1], L2 = m[2];
+      const P1=S[hashedL||L1], P2=S[hashedR||L2];
       for (const L of touched){
         if (L===L1 || L===L2) continue;
-        const proj = T.projectToLineUV(S[L], S[L1], S[L2]);
+        const proj = T.projectToLineUV(S[L], P1, P2);
         const mx = 2*proj.pos.x - S[L].pos.x;
         const my = 2*proj.pos.y - S[L].pos.y;
         S[L] = {...S[L], pos:{x:mx,y:my}, polarity:-S[L].polarity};
@@ -541,15 +581,25 @@ const Entangle = (function(){
     if(/\bsoutheast\b/i.test(text)){ for(const L of touched){ S[L]=T.south(T.east(S[L])) } }
     if(/\bsouthwest\b/i.test(text)){ for(const L of touched){ S[L]=T.south(T.west(S[L])) } }
     if (!/rotate(\d+)/i.test(text) && window.RotCtx && RotCtx.recent>0){
-      const regs = text.match(/\b([A-Z])(\d)\b/g) || [];
+      const regs = text.match(/\b([A-Z])(\d{1,2})\b/g) || [];
       for(const tok of regs){
-        const m=/^([A-Z])(\d)$/.exec(tok);
+        const m=/^([A-Z])(\d{1,2})$/.exec(tok);
         if(!m) continue;
         const L=m[1], d=parseInt(m[2],10);
-        const ang = Entangle.angleMap[d]; if(!ang) continue;
-        S[L]=T.rotate(S[L],ang);
+        const ang = HiMask.angleFor(d);
+        if(ang!=null) S[L]=T.rotate(S[L],ang);
       }
       RotCtx.decay();
+    }
+
+    if (window.TrialMem){
+      if (TrialMem.lastDigits.length && digs.length && touched.length){
+        const p=TrialMem.lastDigits[0], qd=digs[0];
+        const Lfirst = touched[0];
+        HiMask.couple(S, Lfirst, p.d, Lfirst, qd);
+      }
+      const first = (text.match(/\b([A-Z])(\d{1,2})\b/)||[]);
+      if (first.length){ TrialMem.lastDigits = [{L:first[1], d:parseInt(first[2],10)}]; }
     }
     return { S, touched };
   }
@@ -565,10 +615,12 @@ const OpCtx = { lastOp:null, touch:false, clear(){ this.lastOp=null; this.touch=
     const S = cloneStore(S0);
     const tokens = text.split(/\s+/).filter(Boolean);
     const digits = Array(tokens.length).fill(null);
+    const curDigits = [];
+    const touched = lettersTouched(text);
     OpCtx.clear();
 
     // helper
-    function parseLD(tok){ const m=/^([A-Z])(\d)?$/.exec(tok); return m?{L:m[1],d:m[2]?parseInt(m[2],10):null}:null; }
+    function parseLD(tok){ const m=/^([A-Z])(\d{1,2})?$/.exec(tok); return m?{L:m[1],d:m[2]?parseInt(m[2],10):null}:null; }
 
     // PASS 1 — unary stacks + local digit mask on owners
     for(let i=0;i<tokens.length;i++){
@@ -580,12 +632,13 @@ const OpCtx = { lastOp:null, touch:false, clear(){ this.lastOp=null; this.touch=
       }
       // exponent A^k → level +k, collapse to A
       if(/^[A-Z]\^\d+$/.test(tokens[i])){ const [L,exp]=tokens[i].split('^'); S[L]=T.powLevel(S[L], parseInt(exp,10)||1); tokens[i]=L; }
-      // owner with digit suffix A2..A6 → entangled local mask now
-      const m=/^([A-Z])(\d)$/.exec(tokens[i]);
+      // owner with digit suffix → high mask application now
+      const m=/^([A-Z])(\d{1,2})$/.exec(tokens[i]);
       if(m){
         const L=m[1], d=parseInt(m[2],10);
-        S[L]=Entangle.applyLocal(S[L], d);
+        S[L]=HiMask.applyLocal(S[L], d);
         digits[i]=d;
+        curDigits.push({L,d});
         tokens[i]=L; // collapse to the letter to stay within ≤7 tokens downstream
       }
     }
@@ -617,22 +670,48 @@ const OpCtx = { lastOp:null, touch:false, clear(){ this.lastOp=null; this.touch=
       lastOperandHadDigit = curDigit != null;
     }
 
+    if (curDigits.length>=2){
+      for(let i=0;i<curDigits.length-1;i++){
+        HiMask.couple(S, curDigits[i].L, curDigits[i].d, curDigits[i+1].L, curDigits[i+1].d);
+      }
+    }
+
+    if (window.TrialMem){
+      if (TrialMem.lastDigits.length && curDigits.length){
+        const p = TrialMem.lastDigits[0];
+        const q = curDigits[0];
+        HiMask.couple(S, p.L, p.d, q.L, q.d);
+      }
+      TrialMem.lastDigits = curDigits.slice(0,2);
+    }
+
     // LATENT rotations: if prior explicit rotate occurred recently (RotCtx.recent>0),
     // inject angle from any digit observed in this text (if present) and decay.
     if (window.RotCtx && RotCtx.recent>0){
-      const seen = text.match(/\b([A-Z])(\d)\b/g) || [];
+      const seen = text.match(/\b([A-Z])(\d{1,2})\b/g) || [];
       for(const tok of seen){
-        const m=/^([A-Z])(\d)$/.exec(tok); if(!m) continue;
+        const m=/^([A-Z])(\d{1,2})$/.exec(tok); if(!m) continue;
         const L=m[1], d=parseInt(m[2],10);
-        const ang = Entangle.angleMap[d]; if(!ang) continue;
-        S[L]=T.rotate(S[L], ang);
+        const ang = HiMask.angleFor(d);
+        if(ang!=null) S[L]=T.rotate(S[L], ang);
       }
       RotCtx.decay();
     }
 
-    return { S, touched: lettersTouched(text) };
+    return { S, touched };
   }
 
+</script>
+
+<script>
+const TrialMem = {
+  lastDigits: [], // [{L:'A',d:5}, ...]
+  clear(){ this.lastDigits.length=0; }
+};
+window.TrialMem = TrialMem;
+</script>
+
+<script>
   // ---------- Scheduler and game loop ----------
   const Game=(function(){
     let rng, S, log=[], Rbuf=[], t=0, N=2, totalTrials=60, pMatch=0.32, qArith=0.35;
@@ -643,6 +722,7 @@ const OpCtx = { lastOp:null, touch:false, clear(){ this.lastOp=null; this.touch=
       S = makeStore();
       log = []; Rbuf=[]; t=0; N=nback; totalTrials=trials; qArith=q; lastMode=null;
       if (window.RotCtx) RotCtx.recent = 0;
+      if (window.TrialMem) TrialMem.clear();
     }
     function sampleMode(){
       const target = (rng()<qArith) ? 'arith' : 'geom';
