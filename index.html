@@ -567,44 +567,56 @@
     acc:document.getElementById('mAcc')
   };
   let curEntry=null, startTime=0, stats={hit:0, miss:0, fa:0, cr:0};
-  let trialTimer = null;        // handles auto-advance per trial
-  let countdownTimer = null;    // updates countdown badge per second
   let secondsPerTrial = 3;      // default; read from input each trial
+  let autoRafId = 0;            // requestAnimationFrame handle
+  let trialDeadlineMs = 0;      // absolute time when current trial should auto-advance
+  let trialEpoch = 0;           // increments each trial to invalidate stale ticks
 
   function clearTimers(){
-    if (trialTimer) { clearTimeout(trialTimer); trialTimer = null; }
-    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    if (autoRafId) { cancelAnimationFrame(autoRafId); autoRafId = 0; }
     const cd = document.getElementById('cdBadge'); if (cd) cd.textContent = '⏱ —';
   }
 
   function startAutoAdvance(){
-    clearTimers();
+    // read latest value each trial so user can adjust on the fly
     const inp = document.getElementById('secPerTrial');
     const val = inp ? parseFloat(inp.value) : NaN;
     secondsPerTrial = isFinite(val) && val > 0 ? val : 3;
 
+    trialEpoch++; // new trial epoch
+    const myEpoch = trialEpoch;
     const cd = document.getElementById('cdBadge');
-    let remain = secondsPerTrial;
-    if (cd) cd.textContent = '⏱ ' + remain.toFixed(1) + 's';
+    const now = performance.now();
+    trialDeadlineMs = now + secondsPerTrial * 1000;
 
-    const t0 = performance.now();
-    countdownTimer = setInterval(()=>{
-      const dt = (performance.now() - t0)/1000;
-      remain = Math.max(0, secondsPerTrial - dt);
+    // stop any previous loop and start a new session loop
+    clearTimers();
+
+    function tick(ts){
+      // If a newer trial started, abandon this tick.
+      if (myEpoch !== trialEpoch) return;
+
+      // Session complete
+      if (typeof Game !== 'undefined' && Game.done && Game.done()){
+        if (cd) cd.textContent = '⏱ —';
+        autoRafId = 0;
+        return;
+      }
+
+      const remain = Math.max(0, (trialDeadlineMs - ts) / 1000);
       if (cd) cd.textContent = '⏱ ' + remain.toFixed(1) + 's';
 
       if (remain <= 0){
-        // stop timer; advance immediately
-        clearTimers();
-        if (typeof Game !== 'undefined' && Game.done && Game.done()) {
-          // final state
-          const st = document.getElementById('status');
-          if (st) st.textContent = 'complete';
-          return;
-        }
-        next(); // renderEntry() will restart the per-trial timer
+        // Advance exactly once per epoch. next() will render and call startAutoAdvance() again,
+        // which bumps trialEpoch and installs a fresh tick with a new deadline.
+        next();
+        return;
       }
-    }, 100);
+
+      autoRafId = requestAnimationFrame(tick);
+    }
+
+    autoRafId = requestAnimationFrame(tick);
   }
 
   function renderEntry(e){
