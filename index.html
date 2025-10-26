@@ -45,7 +45,7 @@
         <label>Seed:</label><input id="seed" type="number" value="123456789">
         <label>Arithmetic ratio q:</label>
         <input id="arithRatio" type="number" step="0.05" min="0" max="1" value="0.35">
-        <button id="startBtn">Start</button>
+        <button id="startBtn" type="button">Start</button>
         <span class="badge" id="status">idle</span>
       </div>
     </section>
@@ -469,134 +469,186 @@
 
   <script>
 (function(){
-  // --- Voice/TTS: same public hooks as previous version ---
+  // ---------- Stable text hook (unchanged external name) ----------
   if (typeof window.formatPremiseForSpeech !== 'function') {
     window.formatPremiseForSpeech = function(p){
-      if (p && typeof p === 'object' && 'text' in p) return String(p.text || '').trim();
-      return String(p || '').trim();
+      if (p && typeof p === 'object' && 'text' in p) return String(p.text||'').trim();
+      return String(p||'').trim();
     };
   }
 
+  // ---------- Web Speech TTS with warm-up (exact same public name: speak) ----------
   (function(){
     let voices = [];
-    function getVoice(){
-      if (!voices.length) voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-      const en = voices.find(v => (v.lang||'').toLowerCase().startsWith('en'));
-      return en || voices[0] || null;
+    let warmed = false;
+    function refreshVoices(){
+      try { voices = (window.speechSynthesis && speechSynthesis.getVoices()) || []; } catch(_) {}
+      return voices;
     }
-    window.voiceEnabled = true;
-    window.speak = function(text, opts){
+    function pickVoice(){
+      const v = refreshVoices();
+      // prefer any English voice, else first
+      const en = v.find(x => (x.lang||'').toLowerCase().startsWith('en'));
+      return en || v[0] || null;
+    }
+    async function waitForVoices(timeoutMs=1000){
+      refreshVoices();
+      if (voices.length) return;
+      await new Promise(res=>{
+        let done=false;
+        const t=setTimeout(()=>{ if(!done){done=true;res();} }, timeoutMs);
+        const h=()=>{ if(!done){done=true; clearTimeout(t); res();} };
+        try {
+          if (window.speechSynthesis && 'onvoiceschanged' in speechSynthesis) {
+            speechSynthesis.onvoiceschanged=h;
+          } else {
+            // poll fallback
+            const p=setInterval(()=>{
+              if (refreshVoices().length){ clearInterval(p); h(); }
+            }, 100);
+          }
+        } catch(_) { res(); }
+      });
+    }
+    async function warmup(){
+      if (warmed) return;
+      if (!window.speechSynthesis) return;
+      await waitForVoices(1200);
       try{
-        if (!window.speechSynthesis || !voiceEnabled) return;
+        // Tiny unlock utterance. Some engines ignore empty strings, so speak a dot very quietly.
+        const u = new SpeechSynthesisUtterance('.');
+        const v = pickVoice();
+        if (v) u.voice = v;
+        u.lang = (v && v.lang) || 'en-US';
+        u.rate = 1.0; u.pitch = 1.0; u.volume = 0.001;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+        warmed = true;
+      }catch(_){}
+    }
+
+    window.voiceEnabled = true;
+    window.speak = async function(text, opts){
+      try{
+        if (!window.voiceEnabled) return;
+        if (!window.speechSynthesis) return;
         const t = String(text||'').trim();
         if (!t) return;
+        await warmup();
         const u = new SpeechSynthesisUtterance(t);
-        const v = getVoice();
+        const v = pickVoice();
         if (v) u.voice = v;
         u.lang = (v && v.lang) || 'en-US';
         u.rate = (opts && opts.rate) || 1.0;
         u.pitch = (opts && opts.pitch) || 1.0;
         u.volume = (opts && opts.volume) || 1.0;
-        try{ speechSynthesis.cancel(); }catch(_){}
+        // Cancel any queued utterances before speaking current premise
+        try { speechSynthesis.cancel(); } catch(_){}
         speechSynthesis.speak(u);
-      }catch(e){ console.error('speak() failed', e); }
+      } catch(e){ console.error('speak() failed', e); }
     };
-    // voices may load async in some browsers
-    if (window.speechSynthesis && typeof speechSynthesis.onvoiceschanged !== 'undefined') {
-      speechSynthesis.onvoiceschanged = function(){ voices = speechSynthesis.getVoices() || []; };
-    }
-    // hotkey: toggle voice
-    document.addEventListener('keydown', (ev)=>{
-      if (ev.key === 'v' || ev.key === 'V') { window.voiceEnabled = !window.voiceEnabled; }
+
+    // Hotkey to toggle voice (matches prior behavior if present)
+    document.addEventListener('keydown', ev=>{
+      if (ev.key==='v' || ev.key==='V') window.voiceEnabled = !window.voiceEnabled;
     });
   })();
 
-  // --- DOM readiness + Start fix + TTS on render ---
+  // ---------- Start button harden + first-trial render + guaranteed TTS ----------
   document.addEventListener('DOMContentLoaded', function(){
-    const ui = {
-      startBtn: document.getElementById('startBtn'),
-      premiseBox: document.getElementById('premiseBox'),
-      status: document.getElementById('status'),
-      nBack: document.getElementById('nBack'),
-      nTrials: document.getElementById('nTrials'),
-      seed: document.getElementById('seed'),
-      arithRatio: document.getElementById('arithRatio'),
-      trialBadge: document.getElementById('trialBadge'),
-      modeBadge: document.getElementById('modeBadge'),
-      rtBadge: document.getElementById('rtBadge'),
-      logBody: document.getElementById('logBody'),
-      mHits: document.getElementById('mHits'),
-      mMiss: document.getElementById('mMiss'),
-      mFA: document.getElementById('mFA'),
-      mCR: document.getElementById('mCR'),
-      mAcc: document.getElementById('mAcc')
-    };
+    var startBtn = document.getElementById('startBtn');
+    if (!startBtn) return;
 
-    // Bind or re-bind Start reliably
-    if (ui.startBtn) {
-      ui.startBtn.onclick = null;
-      ui.startBtn.addEventListener('click', function(ev){
-        ev.preventDefault();
-        try{
-          if (ui.startBtn.disabled) return;
-          ui.startBtn.disabled = true;
-          if (typeof stats !== 'undefined') {
-            stats = { hit:0, miss:0, fa:0, cr:0 };
-            if (typeof updateAcc === 'function') updateAcc();
-          }
-          if (ui.logBody) ui.logBody.innerHTML='';
+    // Remove any stale handler then bind once
+    startBtn.onclick = null;
+    startBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      try{
+        if (startBtn.disabled) return;
+        startBtn.disabled = true;
 
-          const seedVal = ui.seed ? parseInt(ui.seed.value || '0', 10) : NaN;
-          let seed = Number.isNaN(seedVal) ? 123456789 : seedVal;
-          seed = seed >>> 0;
-          const nbackVal = ui.nBack ? parseInt(ui.nBack.value || '2', 10) : NaN;
-          const nback = Number.isNaN(nbackVal) ? 2 : nbackVal;
-          const trialsVal = ui.nTrials ? parseInt(ui.nTrials.value || '60', 10) : NaN;
-          const trials = Number.isNaN(trialsVal) ? 60 : trialsVal;
-          const ratioVal = ui.arithRatio ? parseFloat(ui.arithRatio.value || '0.35') : NaN;
-          const q = Math.min(1, Math.max(0, Number.isNaN(ratioVal) ? 0.35 : ratioVal));
+        // Inputs
+        var seedEl = document.getElementById('seed');
+        var nBackEl = document.getElementById('nBack');
+        var nTrialsEl = document.getElementById('nTrials');
+        var ratioEl = document.getElementById('arithRatio');
 
-          if (window.Game && typeof Game.init === 'function' && typeof Game.nextTrial === 'function') {
-            Game.init(seed, nback, trials, q);
-            if (ui.status) ui.status.textContent = 'running';
-            if (typeof next === 'function') {
-              next();
-            } else {
-              const e = Game.nextTrial();
-              if (typeof window.curEntry !== 'undefined') window.curEntry = e;
-              if (typeof window.startTime !== 'undefined') window.startTime = performance.now();
-              if (typeof window.renderEntry === 'function') renderEntry(e);
+        var seed = seedEl ? (parseInt(seedEl.value||'123456789',10)>>>0) : (123456789>>>0);
+        var nback = nBackEl ? parseInt(nBackEl.value||'2',10) : 2;
+        var trials = nTrialsEl ? parseInt(nTrialsEl.value||'60',10) : 60;
+        var q = ratioEl ? Math.min(1,Math.max(0, parseFloat(ratioEl.value||'0.35'))) : 0.35;
+
+        // Initialize game
+        if (window.Game && typeof Game.init==='function' && typeof Game.nextTrial==='function') {
+          // reset scoreboard table if present
+          var logBody = document.getElementById('logBody');
+          if (logBody) logBody.innerHTML='';
+          ['mHits','mMiss','mFA','mCR'].forEach(id=>{ var el=document.getElementById(id); if (el) el.textContent='0'; });
+          var accEl=document.getElementById('mAcc'); if (accEl) accEl.textContent='0%';
+
+          Game.init(seed, nback, trials, q);
+
+          // First trial
+          var entry;
+          if (typeof window.next === 'function') {
+            entry = Game.nextTrial(); // pull now, render next manually to ensure TTS ordering
+            // Manual render (mirrors renderEntry)
+            var box = document.getElementById('premiseBox');
+            if (box) box.textContent = entry.text;
+            var tb = document.getElementById('trialBadge');
+            if (tb) tb.textContent = 'Trial '+(Game.t);
+            var mb = document.getElementById('modeBadge');
+            if (mb) mb.textContent = entry.mode;
+            var st = document.getElementById('status');
+            if (st) st.textContent = entry.isMatch?'scheduled-match':'non-match';
+            var rt = document.getElementById('rtBadge');
+            if (rt) rt.textContent = 'RT —';
+            if (logBody) {
+              var tr = document.createElement('tr');
+              tr.innerHTML = '<td>'+Game.t+'</td><td><code>'+entry.text+'</code></td><td>'+entry.mode+'</td><td>'+entry.isMatch+'</td>';
+              logBody.appendChild(tr);
             }
+          } else {
+            entry = Game.nextTrial();
+            if (typeof window.renderEntry === 'function') renderEntry(entry);
           }
-        }catch(err){
-          console.error('Start failed', err);
-          if (ui.status) ui.status.textContent = 'error';
-        }finally{
-          ui.startBtn.disabled = false;
-        }
-      }, { passive:false });
-    }
 
-    // Monkey-patch renderEntry to always speak after rendering, preserving prior signature if present
+          // Speak via the historical hook
+          var spoken = (typeof window.formatPremiseForSpeech==='function') ? formatPremiseForSpeech(entry) : (entry && entry.text) || '';
+          if (spoken) window.speak(spoken);
+
+          // Update status
+          var statusEl = document.getElementById('status');
+          if (statusEl) statusEl.textContent = 'running';
+        }
+      } catch(err){
+        console.error('Start failed', err);
+        var statusEl = document.getElementById('status');
+        if (statusEl) statusEl.textContent = 'error';
+      } finally {
+        startBtn.disabled = false;
+      }
+    }, { passive:false });
+
+    // Also ensure subsequent renders speak, preserving original renderEntry signature
     if (typeof window.renderEntry === 'function') {
-      const _origRender = window.renderEntry;
+      var _origRender = window.renderEntry;
       window.renderEntry = function(e){
-        const out = _origRender(e);
+        var out = _origRender(e);
         try{
-          const spoken = window.formatPremiseForSpeech ? formatPremiseForSpeech(e || '') : ((e && e.text) || '');
+          var spoken = (typeof window.formatPremiseForSpeech==='function') ? formatPremiseForSpeech(e||'') : ((e&&e.text)||'');
           if (spoken) window.speak(spoken);
         }catch(err){ console.error('TTS render hook failed', err); }
         return out;
       };
     } else {
-      // If renderEntry wasn't exported, attach a MutationObserver to #premiseBox and speak on text changes
-      const box = document.getElementById('premiseBox');
+      // Fallback: speak when #premiseBox text changes
+      var box = document.getElementById('premiseBox');
       if (box && window.MutationObserver) {
-        let last = '';
-        new MutationObserver(function(muts){
-          const t = (box.textContent || '').trim();
-          if (t && t !== last) { last = t; window.speak(t); }
-        }).observe(box, { childList:true, characterData:true, subtree:true });
+        var last=''; new MutationObserver(function(){
+          var t=(box.textContent||'').trim();
+          if (t && t!==last){ last=t; window.speak(t); }
+        }).observe(box,{childList:true,characterData:true,subtree:true});
       }
     }
   });
