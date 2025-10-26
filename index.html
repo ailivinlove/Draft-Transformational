@@ -47,6 +47,8 @@
         <input id="arithRatio" type="number" step="0.05" min="0" max="1" value="0.35">
         <label>Seconds / trial:</label>
         <input id="secPerTrial" type="number" step="0.5" min="0.5" value="3">
+        <label>Premises / trial:</label>
+        <input id="premisesPerTrial" type="number" min="1" max="12" step="1" value="1" title="How many premises to execute inside each trial">
         <button id="startBtn" type="button">Start</button>
         <span class="badge" id="status">idle</span>
       </div>
@@ -800,13 +802,14 @@ window.EchoMem = EchoMem;
 <script>
   // ---------- Scheduler and game loop ----------
   const Game=(function(){
-    let rng, S, log=[], Rbuf=[], t=0, N=2, totalTrials=60, pMatch=0.32, qArith=0.35;
+    let rng, S, log=[], Rbuf=[], t=0, N=2, totalTrials=60, pMatch=0.32, qArith=0.35, bundleCount=1;
     let lastMode=null;
     let trialStart=0;
-    function init(seed, nback, trials, q){
+    function init(seed, nback, trials, q, bundle){
       rng = mulberry32(window.mixSeed ? mixSeed(seed>>>0) : (seed>>>0));
       S = makeStore();
       log = []; Rbuf=[]; t=0; N=nback; totalTrials=trials; qArith=q; lastMode=null;
+      bundleCount = Math.max(1, Math.min(12, parseInt(bundle||1,10) || 1));
       if (window.RotCtx) RotCtx.recent = 0;
       if (window.TrialMem) TrialMem.clear();
       if (window.EchoMem) EchoMem.last=null;
@@ -816,46 +819,63 @@ window.EchoMem = EchoMem;
       if (lastMode===want && rng()<0.7) { lastMode = (want==='arith'?'geom':'arith'); return lastMode; }
       lastMode = want; return lastMode;
     }
-    function buildNonMatch(mode){
-      for(let guard=0; guard<200; guard++){
-        const g = mode==='arith' ? ArithGen.generate(rng) : GeomGen.generate(rng);
-        const text = g.text;
-        if (tokCount(text) > 7) continue;   // extra safety
-        // reject surface duplicates
-        if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(text)) continue;
-        // Apply to shadow store
-        const S1 = cloneStore(S);
-        const res = (mode==='arith') ? applyArithPremise(S1,text) : applyGeomPremise(S1,text);
-        const Rh = resultantHash(res.S, res.touched);
-        if(t>=N && Rh === Rbuf[t-N]) continue; // accidental match -> resample
-        // commit
-        Object.assign(S, res.S);
-        const entry = {t, text, mode, isMatch:false, Rh};
-        if (window.IW_Novelty && IW_Novelty.record) IW_Novelty.record(text, { pending: true });
-        return entry;
+    function genOne(mode,rng,Store){
+      const g = mode==='arith' ? ArithGen.generate(rng) : GeomGen.generate(rng);
+      const text = g.text;
+      if (tokCount(text) > 7) return null;
+      if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(text)) return null;
+      const S1 = cloneStore(Store);
+      const res = (mode==='arith') ? applyArithPremise(S1,text) : applyGeomPremise(S1,text);
+      return { text, S1: res.S, touched: res.touched };
+    }
+
+    function buildBundle(mode,targetHashOrNull){
+      // When targetHashOrNull is null → non-match. Otherwise we seek that hash.
+      // We keep the same mode across the bundle for determinism.
+      for (let outer=0; outer<600; outer++){
+        let texts=[], Sshadow=cloneStore(S), touchedAll=new Set();
+        for (let i=0;i<bundleCount;i++){
+          // Try up to a few attempts per item to keep novelty/budget
+          let item=null, tries=0;
+          while(!item && tries<80){ item = genOne(mode,rng,Sshadow); tries++; }
+          if(!item){ texts=[]; break; }
+          texts.push(item.text);
+          Object.assign(Sshadow, item.S1);
+          item.touched.forEach(L=>touchedAll.add(L));
+        }
+        if (!texts.length) continue;
+        const Rh = resultantHash(Sshadow, Array.from(touchedAll));
+        if (targetHashOrNull==null){
+          // Non-match path: avoid accidental match when t>=N
+          if (Game.t>=Game.N && Rh === Rbuf[Game.t-Game.N]) continue;
+          return { texts, Rh, Snext:Sshadow };
+        } else {
+          if (Rh !== targetHashOrNull) continue;
+          return { texts, Rh, Snext:Sshadow };
+        }
       }
-      throw new Error('buildNonMatch failed');
+      return null;
+    }
+
+    function buildNonMatch(mode){
+      const b = buildBundle(mode, null);
+      if (!b) throw new Error('buildNonMatch failed');
+      Object.assign(S, b.Snext);
+      const entry = { t, text: b.texts.join(' ; '), mode, isMatch:false, Rh: b.Rh };
+      if (window.IW_Novelty && IW_Novelty.record) IW_Novelty.record(entry.text, { pending: true });
+      return entry;
     }
     function buildMatch(mode){
-      // brute force search for an instruction that generates Rbuf[t-N]
+      if (t < N) return buildNonMatch(mode);
       const target = Rbuf[t-N];
-      for(let guard=0; guard<800; guard++){
-        const modeTry = mode; // keep same mode for match
-        const g = modeTry==='arith' ? ArithGen.generate(rng) : GeomGen.generate(rng);
-        const text = g.text;
-        if (tokCount(text) > 7) continue;   // extra safety
-        if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(text)) continue;
-        const S1 = cloneStore(S);
-        const res = (modeTry==='arith') ? applyArithPremise(S1,text) : applyGeomPremise(S1,text);
-        const Rh = resultantHash(res.S, res.touched);
-        if(Rh !== target) continue;
-        // commit
-        Object.assign(S, res.S);
-        const entry = {t, text, mode:modeTry, isMatch:true, Rh};
-        if (window.IW_Novelty && IW_Novelty.record) IW_Novelty.record(text, { pending: true });
+      const b = buildBundle(mode, target);
+      if (b){
+        Object.assign(S, b.Snext);
+        const entry = { t, text: b.texts.join(' ; '), mode, isMatch:true, Rh: b.Rh };
+        if (window.IW_Novelty && IW_Novelty.record) IW_Novelty.record(entry.text, { pending: true });
         return entry;
       }
-      // fallback: force non-match if not found
+      // Fallback if not found
       return buildNonMatch(mode);
     }
     function nextTrial(){
@@ -1161,6 +1181,7 @@ window.EchoMem = EchoMem;
         var nBackEl = document.getElementById('nBack');
         var nTrialsEl = document.getElementById('nTrials');
         var ratioEl = document.getElementById('arithRatio');
+        var bundleEl = document.getElementById('premisesPerTrial');
 
         var seed = seedEl ? (parseInt(seedEl.value||'123456789',10)>>>0) : (123456789>>>0);
         var nback = nBackEl ? parseInt(nBackEl.value||'2',10) : 2;
@@ -1175,7 +1196,8 @@ window.EchoMem = EchoMem;
           ['mHits','mMiss','mFA','mCR'].forEach(id=>{ var el=document.getElementById(id); if (el) el.textContent='0'; });
           var accEl=document.getElementById('mAcc'); if (accEl) accEl.textContent='0%';
 
-          Game.init(seed, nback, trials, q);
+          var bundle = bundleEl ? parseInt(bundleEl.value||'1',10) : 1;
+          Game.init(seed, nback, trials, q, bundle);
           if (window.IW_Novelty && IW_Novelty.resetSession) IW_Novelty.resetSession();
 
           try { if (window.speechSynthesis) { speechSynthesis.cancel(); speechSynthesis.resume(); } } catch(_){ }
