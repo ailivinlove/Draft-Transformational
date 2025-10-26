@@ -443,18 +443,6 @@
     renderEntry(curEntry);
   }
 
-  ui.startBtn.addEventListener('click',()=>{
-    stats={hit:0, miss:0, fa:0, cr:0}; updateAcc();
-    ui.logBody.innerHTML='';
-    const seed = parseInt(ui.seed.value||'0',10)>>>0;
-    const nback = parseInt(ui.nBack.value,10);
-    const ntr = parseInt(ui.nTrials.value,10);
-    const q = Math.min(1,Math.max(0,parseFloat(ui.arithRatio.value)));
-    Game.init(seed,nback,ntr,q);
-    ui.status.textContent='running';
-    next();
-  });
-
   function register(respMatch){
     if(!curEntry) return;
     const rt = performance.now()-startTime;
@@ -466,16 +454,153 @@
     updateAcc();
   }
 
-  ui.btnMatch.addEventListener('click',()=>{ register(true); });
-  ui.btnNoMatch.addEventListener('click',()=>{ register(false); });
-  ui.btnNext.addEventListener('click',()=>{ next(); });
+  document.addEventListener('DOMContentLoaded',()=>{
+    if(ui.btnMatch) ui.btnMatch.addEventListener('click',()=>{ register(true); });
+    if(ui.btnNoMatch) ui.btnNoMatch.addEventListener('click',()=>{ register(false); });
+    if(ui.btnNext) ui.btnNext.addEventListener('click',()=>{ next(); });
 
-  // keyboard shortcuts N for next decision: M = match, K = no-match, Space => next
-  document.addEventListener('keydown',(e)=>{
-    if(e.key==='m' || e.key==='M'){ register(true); }
-    else if(e.key==='k' || e.key==='K'){ register(false); }
-    else if(e.code==='Space'){ e.preventDefault(); next(); }
+    document.addEventListener('keydown',(e)=>{
+      if(e.key==='m' || e.key==='M'){ register(true); }
+      else if(e.key==='k' || e.key==='K'){ register(false); }
+      else if(e.code==='Space'){ e.preventDefault(); next(); }
+    });
   });
+  </script>
+
+  <script>
+(function(){
+  // --- Voice/TTS: same public hooks as previous version ---
+  if (typeof window.formatPremiseForSpeech !== 'function') {
+    window.formatPremiseForSpeech = function(p){
+      if (p && typeof p === 'object' && 'text' in p) return String(p.text || '').trim();
+      return String(p || '').trim();
+    };
+  }
+
+  (function(){
+    let voices = [];
+    function getVoice(){
+      if (!voices.length) voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+      const en = voices.find(v => (v.lang||'').toLowerCase().startsWith('en'));
+      return en || voices[0] || null;
+    }
+    window.voiceEnabled = true;
+    window.speak = function(text, opts){
+      try{
+        if (!window.speechSynthesis || !voiceEnabled) return;
+        const t = String(text||'').trim();
+        if (!t) return;
+        const u = new SpeechSynthesisUtterance(t);
+        const v = getVoice();
+        if (v) u.voice = v;
+        u.lang = (v && v.lang) || 'en-US';
+        u.rate = (opts && opts.rate) || 1.0;
+        u.pitch = (opts && opts.pitch) || 1.0;
+        u.volume = (opts && opts.volume) || 1.0;
+        try{ speechSynthesis.cancel(); }catch(_){}
+        speechSynthesis.speak(u);
+      }catch(e){ console.error('speak() failed', e); }
+    };
+    // voices may load async in some browsers
+    if (window.speechSynthesis && typeof speechSynthesis.onvoiceschanged !== 'undefined') {
+      speechSynthesis.onvoiceschanged = function(){ voices = speechSynthesis.getVoices() || []; };
+    }
+    // hotkey: toggle voice
+    document.addEventListener('keydown', (ev)=>{
+      if (ev.key === 'v' || ev.key === 'V') { window.voiceEnabled = !window.voiceEnabled; }
+    });
+  })();
+
+  // --- DOM readiness + Start fix + TTS on render ---
+  document.addEventListener('DOMContentLoaded', function(){
+    const ui = {
+      startBtn: document.getElementById('startBtn'),
+      premiseBox: document.getElementById('premiseBox'),
+      status: document.getElementById('status'),
+      nBack: document.getElementById('nBack'),
+      nTrials: document.getElementById('nTrials'),
+      seed: document.getElementById('seed'),
+      arithRatio: document.getElementById('arithRatio'),
+      trialBadge: document.getElementById('trialBadge'),
+      modeBadge: document.getElementById('modeBadge'),
+      rtBadge: document.getElementById('rtBadge'),
+      logBody: document.getElementById('logBody'),
+      mHits: document.getElementById('mHits'),
+      mMiss: document.getElementById('mMiss'),
+      mFA: document.getElementById('mFA'),
+      mCR: document.getElementById('mCR'),
+      mAcc: document.getElementById('mAcc')
+    };
+
+    // Bind or re-bind Start reliably
+    if (ui.startBtn) {
+      ui.startBtn.onclick = null;
+      ui.startBtn.addEventListener('click', function(ev){
+        ev.preventDefault();
+        try{
+          if (ui.startBtn.disabled) return;
+          ui.startBtn.disabled = true;
+          if (typeof stats !== 'undefined') {
+            stats = { hit:0, miss:0, fa:0, cr:0 };
+            if (typeof updateAcc === 'function') updateAcc();
+          }
+          if (ui.logBody) ui.logBody.innerHTML='';
+
+          const seedVal = ui.seed ? parseInt(ui.seed.value || '0', 10) : NaN;
+          let seed = Number.isNaN(seedVal) ? 123456789 : seedVal;
+          seed = seed >>> 0;
+          const nbackVal = ui.nBack ? parseInt(ui.nBack.value || '2', 10) : NaN;
+          const nback = Number.isNaN(nbackVal) ? 2 : nbackVal;
+          const trialsVal = ui.nTrials ? parseInt(ui.nTrials.value || '60', 10) : NaN;
+          const trials = Number.isNaN(trialsVal) ? 60 : trialsVal;
+          const ratioVal = ui.arithRatio ? parseFloat(ui.arithRatio.value || '0.35') : NaN;
+          const q = Math.min(1, Math.max(0, Number.isNaN(ratioVal) ? 0.35 : ratioVal));
+
+          if (window.Game && typeof Game.init === 'function' && typeof Game.nextTrial === 'function') {
+            Game.init(seed, nback, trials, q);
+            if (ui.status) ui.status.textContent = 'running';
+            if (typeof next === 'function') {
+              next();
+            } else {
+              const e = Game.nextTrial();
+              if (typeof window.curEntry !== 'undefined') window.curEntry = e;
+              if (typeof window.startTime !== 'undefined') window.startTime = performance.now();
+              if (typeof window.renderEntry === 'function') renderEntry(e);
+            }
+          }
+        }catch(err){
+          console.error('Start failed', err);
+          if (ui.status) ui.status.textContent = 'error';
+        }finally{
+          ui.startBtn.disabled = false;
+        }
+      }, { passive:false });
+    }
+
+    // Monkey-patch renderEntry to always speak after rendering, preserving prior signature if present
+    if (typeof window.renderEntry === 'function') {
+      const _origRender = window.renderEntry;
+      window.renderEntry = function(e){
+        const out = _origRender(e);
+        try{
+          const spoken = window.formatPremiseForSpeech ? formatPremiseForSpeech(e || '') : ((e && e.text) || '');
+          if (spoken) window.speak(spoken);
+        }catch(err){ console.error('TTS render hook failed', err); }
+        return out;
+      };
+    } else {
+      // If renderEntry wasn't exported, attach a MutationObserver to #premiseBox and speak on text changes
+      const box = document.getElementById('premiseBox');
+      if (box && window.MutationObserver) {
+        let last = '';
+        new MutationObserver(function(muts){
+          const t = (box.textContent || '').trim();
+          if (t && t !== last) { last = t; window.speak(t); }
+        }).observe(box, { childList:true, characterData:true, subtree:true });
+      }
+    }
+  });
+})();
   </script>
 </body>
 </html>
