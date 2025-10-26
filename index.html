@@ -323,20 +323,19 @@ const UltraMask = (function(){
 
     function structSig(txt){
       const t = txt
-        .replace(/\b[A-Z]\d{0,2}\b/g,'L')
-        .replace(/√L/g,'SQRT')
-        .replace(/rotate(\d+)/ig,'ROT$1')
-        .replace(/\breflect\b/ig,'REF')
-        .replace(/\bproject\b/ig,'PROJ')
-        .replace(/\bmidpoint\b/ig,'MID')
-        .replace(/\bbisects\b/ig,'BIS')
-        .replace(/\bperp-bisector\b/ig,'PB')
+        .replace(/\b[A-Z]\d{0,2}\b/g,'L#')       // letter(+digits)
+        .replace(/√L#/g,'SQRT')
         .replace(/\binverted\b/ig,'INV')
-        .replace(/\bscale(\d+)/ig,'S$1')
+        .replace(/\brotate(\d+)\b/ig,'ROT$1')
+        .replace(/\bscale(\d+)\b/ig,'S$1')
+        .replace(/\b(project|reflect|midpoint|bisects|perp-bisector)\b/ig,(m)=>m.toUpperCase())
         .replace(/\b(north|south|east|west|northeast|northwest|southeast|southwest)\b/ig,(m)=>m.toUpperCase())
         .replace(/\s+/g,' ')
         .trim();
-      return t;
+      // capture operator order and digit multiset
+      const ops = (txt.match(/[+\-−×*/÷]/g)||[]).join('');
+      const digs = (txt.match(/\b[A-Z](\d{1,2})\b/g)||[]).map(s=>parseInt(s.slice(1),10)).sort((a,b)=>a-b).join(',');
+      return `${t} | OPS:${ops} | D:${digs}`;
     }
 
     function hf(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619);} return (h>>>0).toString(16); }
@@ -358,7 +357,7 @@ const UltraMask = (function(){
         this.seenText.add(hTxt);
         if(isNew){
           this.seenStructRecent.push(hSig);
-          if(this.seenStructRecent.length>1600) this.seenStructRecent = this.seenStructRecent.slice(-1600);
+          if(this.seenStructRecent.length>5000) this.seenStructRecent = this.seenStructRecent.slice(-5000);
           this.mem.add(hTxt);
           saveMem(this.mem);
         }
@@ -428,21 +427,32 @@ const UltraMask = (function(){
   })();
 
   // ---------- Geometric generator ----------
+  function tokenEntropyScore(txt){
+    const toks = txt.trim().split(/\s+/);
+    const uniq = new Set(toks).size;
+    const ops = (txt.match(/[+\-−×*/÷]/g)||[]).length;
+    const digits = (txt.match(/\b[A-Z](\d{1,2})\b/g)||[]).length;
+    // Encourage uniqueness, at least one operator OR geometry keyword, and at least one suffix digit when arithmetic
+    return uniq + ops + digits;
+  }
+
   const GeomGen=(function(){
-    const ANGLES=[15,30,36,45,54,60,72,75,90,108,120,135,144,150,165,180];
     const DIRS=['north','south','east','west','northeast','northwest','southeast','southwest'];
     const LTRS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
     function pick(r,arr){return arr[Math.floor(r()*arr.length)];}
-    function angle(r){return pick(r,ANGLES);}
+    function angle(r){
+      // heavy weight to 36,54,72,108,144; keep catalog fixed
+      const C=[15,30,36,45,54,60,72,75,90,108,120,135,144,150,165,180];
+      const W=[1,1,4,1,4,1,4,1,1,4,1,1,4,1,1,1];
+      let s=W.reduce((a,b)=>a+b,0), t=r()*s;
+      for(let i=0;i<C.length;i++){ t-=W[i]; if(t<=0) return C[i]; }
+      return 90;
+    }
     function randLetter(r,excl=new Set(['U','V'])){ let L; for(let k=0;k<10;k++){ L=pick(r,LTRS); if(!excl.has(L)) break; } return L; }
 
     function randTwoLetters(r, excl=new Set()){
-      let a, b;
-      for (let k=0;k<20;k++){
-        a = randLetter(r, excl);
-        b = randLetter(r, new Set([...excl, a]));
-        if (a !== b) break;
-      }
+      const ban = new Set([...excl,'U','V']);
+      let a, b; for(let k=0;k<80;k++){ a=randLetter(r,ban); b=randLetter(r,new Set([...ban,a])); if(a!==b) break; }
       return [a,b];
     }
 
@@ -482,13 +492,32 @@ const UltraMask = (function(){
       return `${C} ${pick(r,dirs)} of U`;                    // 4 tokens
     }
     const families=[tplMidpoint,tplDir,tplRotate,tplReflectLine,tplProject,tplScale,tplLattice,tplBisect];
+    let lastFam = null;
+    function pickWeightedFamily(r){
+      // discourage immediate repeats and encourage rarer templates
+      const base = families.map((f,i)=>({i,w:1}));
+      // favor rotate, reflectLine, project, lattice
+      const boost = {tplRotate:2.4, tplReflectLine:2.0, tplProject:1.8, tplLattice:1.6};
+      for (let k=0;k<families.length;k++){
+        const name = families[k].name || '';
+        base[k].w *= (boost[name]||1);
+        if (k===lastFam) base[k].w *= 0.25; // suppress back-to-back
+      }
+      const sum = base.reduce((s,x)=>s+x.w,0);
+      let t=r()*sum;
+      for (const x of base){ t-=x.w; if (t<=0) return x.i; }
+      return 0;
+    }
 
     function generate(r){
       for(let guard=0; guard<1200; guard++){
-        const f = pick(r,families);
+        const idx = pickWeightedFamily(r);
+        const f = families[idx];
         const txt = sanitizeText(f(r));
+        if(tokenEntropyScore(txt) < 3) continue;
         if(!withinBudget(txt,7)) continue;
         if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(txt)) continue;
+        lastFam = idx;
         return { text: txt, touched: lettersTouched(txt) };
       }
       throw new Error('GeomGen failed: novelty budget exhausted');
@@ -502,25 +531,26 @@ const UltraMask = (function(){
       const LTRS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''); const BIN=['+','−','×','÷'];
       const pick=L=>L[Math.floor(r()*L.length)]; const L=()=>pick(LTRS);
       const d=()=> String(2+Math.floor(r()*11)); // 2..12
-      if (r()<0.62){
-        // 3–5 tokens
-        const a = (r()<0.5? '√':'inverted ') + L();
-        const op = pick(BIN);
-        const b = L()+d();
-        return sanitizeText(`${a} ${op} ${b}`);
+      if (r()<0.68){
+        // 3–5 tokens, guaranteed one unary and one suffixed
+        const head = (r()<0.5? `√${L()}` : `inverted ${L()}`);
+        const op   = pick(BIN);
+        const tail = `${L()}${d()}`;
+        return sanitizeText(`${head} ${op} ${tail}`);
       } else {
-        // 5–6 tokens
-        const a = L() + '^' + (2+Math.floor(r()*3));
+        // 5–6 tokens, two suffixed + one unary tail to trigger tri-coupling
+        const a = `${L()}${d()}`;
         const op1 = pick(BIN);
-        const b = L()+d();
+        const b = `${L()}${d()}`;
         const op2 = pick(BIN);
-        const tail = (r()<0.5? `√${L()}` : `inverted ${L()+d()}`);
+        const tail = (r()<0.5? `√${L()}` : `inverted ${L()}`);
         return sanitizeText(`${a} ${op1} ${b} ${op2} ${tail}`);
       }
     }
     function generate(r){
       for(let guard=0; guard<1600; guard++){
         const txt = build(r);
+        if(tokenEntropyScore(txt) < 4) continue;
         if(!withinBudget(txt,7)) continue;
         if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(txt)) continue;
         return { text: txt, touched: lettersTouched(txt) };
@@ -782,9 +812,9 @@ window.EchoMem = EchoMem;
       if (window.EchoMem) EchoMem.last=null;
     }
     function sampleMode(){
-      const target = (rng()<qArith) ? 'arith' : 'geom';
-      if (lastMode===target && rng()<0.5) { lastMode = (target==='arith'?'geom':'arith'); return lastMode; }
-      lastMode = target; return lastMode;
+      const want = (rng()<qArith) ? 'arith' : 'geom';
+      if (lastMode===want && rng()<0.7) { lastMode = (want==='arith'?'geom':'arith'); return lastMode; }
+      lastMode = want; return lastMode;
     }
     function buildNonMatch(mode){
       for(let guard=0; guard<200; guard++){
