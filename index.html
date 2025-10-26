@@ -223,7 +223,9 @@
       lastRecordedText: null,
       lastRecordedStruct: null,
       lastRecordIsNew: false,
-      record(txt){
+      pendingAcceptance: false,
+      record(txt, opts){
+        const cfg = opts || {};
         const sig = structSig(txt);
         const hTxt = 'T:'+hf(txt.toLowerCase());
         const hSig = 'S:'+hf(sig);
@@ -231,20 +233,26 @@
         this.seenText.add(hTxt);
         if(isNew){
           this.seenStructRecent.push(hSig);
-          if(this.seenStructRecent.length>800) this.seenStructRecent = this.seenStructRecent.slice(-800);
+          if(this.seenStructRecent.length>1600) this.seenStructRecent = this.seenStructRecent.slice(-1600);
           this.mem.add(hTxt);
           saveMem(this.mem);
         }
         this.lastRecordedText = hTxt;
         this.lastRecordedStruct = hSig;
         this.lastRecordIsNew = isNew;
+        this.pendingAcceptance = !!cfg.pending;
       },
       isNovel(txt, opts){
         const cfg = opts || {};
         const sig = structSig(txt);
         const hTxt = 'T:'+hf(txt.toLowerCase());
         const hSig = 'S:'+hf(sig);
-        if(!cfg.ignoreSession && this.seenText.has(hTxt)) return false;
+        if(!cfg.ignoreSession && this.seenText.has(hTxt)) {
+          if(this.pendingAcceptance && this.lastRecordedText === hTxt && this.lastRecordIsNew) {
+            return true;
+          }
+          return false;
+        }
         const isFresh = !!(cfg.ignoreSession && this.lastRecordedText === hTxt);
         if(this.mem.has(hTxt) && !isFresh) return false;
         if(!cfg.ignoreSession && this.seenStructRecent.includes(hSig)) return false;
@@ -256,6 +264,7 @@
         this.lastRecordedText=null;
         this.lastRecordedStruct=null;
         this.lastRecordIsNew=false;
+        this.pendingAcceptance=false;
       }
     };
     window.IW_Novelty = Session;
@@ -273,7 +282,24 @@
         return (parseInt(v,10)>>>0);
       }catch(_){ return (Date.now()>>>0); }
     }
-    window.mixSeed = function(seed){ return (seed>>>0) ^ getSalt(); };
+    (function(){
+      const RUN_KEY = 'iw_run_counter_v1';
+      function bumpRun(){
+        let n = 0;
+        try { n = parseInt(localStorage.getItem(RUN_KEY)||'0',10) || 0; } catch(_){ }
+        n = (n + 1) >>> 0;
+        try { localStorage.setItem(RUN_KEY, String(n)); } catch(_){ }
+        return n;
+      }
+      window.bumpRunCounter = bumpRun;
+      window.mixSeed = function(seed){
+        const base = (seed>>>0) ^ getSalt();
+        // add a per-run counter and a small jitter from time
+        const run = (typeof bumpRunCounter==='function' ? bumpRunCounter() : 0) >>> 0;
+        const jitter = (Date.now() & 0xffff) >>> 0;
+        return (base ^ (run*2654435761>>>0) ^ jitter) >>> 0;
+      };
+    })();
   })();
 
   // ---------- Geometric generator ----------
@@ -325,8 +351,6 @@
         const f = pick(r,families);
         const txt = sanitizeText(f(r));
         if(!within7Words(txt)) continue;
-        if(window.IW_Novelty && !IW_Novelty.isNovel(txt)) continue;
-        if(window.IW_Novelty) IW_Novelty.record(txt);
         return { text: txt, touched: lettersTouched(txt) };
       }
       throw new Error('GeomGen failed: novelty budget exhausted');
@@ -355,8 +379,6 @@
       for(let guard=0; guard<1600; guard++){
         const txt = build(r);
         if(!within7Words(txt)) continue;
-        if(window.IW_Novelty && !IW_Novelty.isNovel(txt)) continue;
-        if(window.IW_Novelty) IW_Novelty.record(txt);
         return { text: txt, touched: lettersTouched(txt) };
       }
       throw new Error('ArithGen failed: novelty budget exhausted');
@@ -472,6 +494,8 @@
       for(let guard=0; guard<200; guard++){
         const g = mode==='arith' ? ArithGen.generate(rng) : GeomGen.generate(rng);
         const text = g.text;
+        // reject surface duplicates
+        if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(text)) continue;
         // Apply to shadow store
         const S1 = cloneStore(S);
         const res = (mode==='arith') ? applyArithPremise(S1,text) : applyGeomPremise(S1,text);
@@ -480,6 +504,7 @@
         // commit
         Object.assign(S, res.S);
         const entry = {t, text, mode, isMatch:false, Rh};
+        if (window.IW_Novelty && IW_Novelty.record) IW_Novelty.record(text, { pending: true });
         return entry;
       }
       throw new Error('buildNonMatch failed');
@@ -491,6 +516,7 @@
         const modeTry = mode; // keep same mode for match
         const g = modeTry==='arith' ? ArithGen.generate(rng) : GeomGen.generate(rng);
         const text = g.text;
+        if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(text)) continue;
         const S1 = cloneStore(S);
         const res = (modeTry==='arith') ? applyArithPremise(S1,text) : applyGeomPremise(S1,text);
         const Rh = resultantHash(res.S, res.touched);
@@ -498,6 +524,7 @@
         // commit
         Object.assign(S, res.S);
         const entry = {t, text, mode:modeTry, isMatch:true, Rh};
+        if (window.IW_Novelty && IW_Novelty.record) IW_Novelty.record(text, { pending: true });
         return entry;
       }
       // fallback: force non-match if not found
@@ -589,6 +616,9 @@
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${Game.t}</td><td><code>${e.text}</code></td><td>${e.mode}</td><td>${e.isMatch}</td>`;
     ui.logBody.appendChild(tr);
+    if (window.IW_Novelty && IW_Novelty.record && e && e.text) {
+      IW_Novelty.record(e.text);
+    }
     if (typeof startAutoAdvance === 'function') startAutoAdvance();
   }
   window.renderEntry = renderEntry;
@@ -795,17 +825,13 @@
             return row;
           }
 
-          var noveltyMemBefore = (window.IW_Novelty && IW_Novelty.mem) ? new Set(IW_Novelty.mem) : null;
           var entry = Game.nextTrial();
           var manualRender = (typeof window.next === 'function');
 
           if (window.IW_Novelty && entry && entry.text) {
             let guard=0;
-            let textHash = 'T:'+hashString(entry.text.toLowerCase());
-            while (((IW_Novelty.isNovel && !IW_Novelty.isNovel(entry.text, { ignoreSession: true })) || (noveltyMemBefore && noveltyMemBefore.has(textHash))) && guard<20) {
-              Game.init(seed, nback, trials, q);
-              entry = Game.nextTrial();
-              textHash = 'T:'+hashString(entry.text.toLowerCase());
+            while (IW_Novelty.isNovel && !IW_Novelty.isNovel(entry.text) && guard<40) {
+              entry = Game.nextTrial();  // DO NOT re-init here; the per-run seed is already unique
               guard++;
             }
           }
