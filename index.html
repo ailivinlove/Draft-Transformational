@@ -45,6 +45,8 @@
         <label>Seed:</label><input id="seed" type="number" value="123456789">
         <label>Arithmetic ratio q:</label>
         <input id="arithRatio" type="number" step="0.05" min="0" max="1" value="0.35">
+        <label>Seconds / trial:</label>
+        <input id="secPerTrial" type="number" step="0.5" min="0.5" value="3">
         <button id="startBtn" type="button">Start</button>
         <span class="badge" id="status">idle</span>
       </div>
@@ -61,6 +63,7 @@
         <span class="badge" id="trialBadge">Trial —</span>
         <span class="badge" id="modeBadge">mode —</span>
         <span class="badge" id="rtBadge">RT —</span>
+        <span class="badge" id="cdBadge">⏱ —</span>
       </div>
     </section>
 
@@ -415,6 +418,53 @@
     acc:document.getElementById('mAcc')
   };
   let curEntry=null, startTime=0, stats={hit:0, miss:0, fa:0, cr:0};
+  let trialTimer = null;        // handles auto-advance per trial
+  let countdownTimer = null;    // updates countdown badge per second
+  let secondsPerTrial = 3;      // default; read from input each trial
+
+  function clearTimers(){
+    if (trialTimer) { clearTimeout(trialTimer); trialTimer = null; }
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    const cd = document.getElementById('cdBadge'); if (cd) cd.textContent = '⏱ —';
+  }
+
+  function startAutoAdvance(){
+    clearTimers();
+    // read latest value each trial to allow on-the-fly changes
+    const inp = document.getElementById('secPerTrial');
+    const val = inp ? parseFloat(inp.value) : NaN;
+    secondsPerTrial = isFinite(val) && val > 0 ? val : 3;
+
+    // countdown display
+    const cd = document.getElementById('cdBadge');
+    let remain = secondsPerTrial;
+    if (cd) cd.textContent = '⏱ ' + remain.toFixed(1) + 's';
+
+    // tick every 100ms for smoothness; update badge each ~500ms
+    let lastBadgeUpdate = 0;
+    const t0 = performance.now();
+
+    countdownTimer = setInterval(()=>{
+      const dt = (performance.now() - t0)/1000;
+      remain = Math.max(0, secondsPerTrial - dt);
+      if (cd && performance.now() - lastBadgeUpdate > 200) {
+        cd.textContent = '⏱ ' + remain.toFixed(1) + 's';
+        lastBadgeUpdate = performance.now();
+      }
+      if (remain <= 0){
+        clearTimers();
+      }
+    }, 100);
+
+    // auto-advance when time elapses
+    trialTimer = setTimeout(()=>{
+      clearTimers();
+      // If the game is already finished, do nothing
+      if (typeof Game !== 'undefined' && Game.done && Game.done()) return;
+      // Auto-advance to next trial
+      next();
+    }, Math.max(50, secondsPerTrial * 1000));
+  }
 
   function renderEntry(e){
     ui.premiseBox.textContent = e.text;
@@ -425,6 +475,7 @@
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${Game.t}</td><td><code>${e.text}</code></td><td>${e.mode}</td><td>${e.isMatch}</td>`;
     ui.logBody.appendChild(tr);
+    if (typeof startAutoAdvance === 'function') startAutoAdvance();
   }
   window.renderEntry = renderEntry;
 
@@ -439,6 +490,7 @@
   }
 
   function next(){
+    clearTimers();
     if(Game.done()){ ui.status.textContent='complete'; return; }
     curEntry = Game.nextTrial();
     startTime = performance.now();
@@ -455,6 +507,11 @@
     else if(!curEntry.isMatch && respMatch){ stats.fa++; }
     else { stats.cr++; }
     updateAcc();
+    // Advance immediately on response
+    clearTimers();
+    if (!Game.done()) {
+      next();
+    }
   }
 
   document.addEventListener('DOMContentLoaded',()=>{
@@ -625,6 +682,8 @@
             entry = Game.nextTrial();
             if (typeof window.renderEntry === 'function') renderEntry(entry);
           }
+
+          if (typeof startAutoAdvance === 'function') startAutoAdvance();
 
           // Speak via the historical hook
           var spoken = (typeof window.formatPremiseForSpeech==='function') ? formatPremiseForSpeech(entry) : (entry && entry.text) || '';
