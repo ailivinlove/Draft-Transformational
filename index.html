@@ -200,7 +200,8 @@
 
   // ---------- Lexicon rules ----------
   function sanitizeText(s){return s.replace(/\bopposite\b/gi,'inverted').replace(/\babout\b|\bexactly\b/gi,'').replace(/\s+/g,' ').trim()}
-  function within7Words(s){return s.split(/\s+/).filter(Boolean).length<=7}
+  function tokCount(s){ return s.trim().split(/\s+/).filter(Boolean).length; }
+  function withinBudget(s, max=7){ return tokCount(s) <= max; }
 
   // ---------- Novelty guard + RNG mixing ----------
   (function(){
@@ -342,46 +343,46 @@
 
     function tplRotate(r){
       const A=randLetter(r), C=randLetter(r);
-      return `${A} rotate${angle(r)} U from ${C}`;
+      return `${A} rotate${angle(r)} U from ${C}`;           // 5 tokens
     }
     function tplReflectLine(r){
-      const B=randLetter(r), S=randLetter(r,new Set());
-      const [L1,L2] = randTwoLetters(r, new Set([S,B]));
-      return `${B} reflect ${S} across line ${L1},${L2}`;
+      const B=randLetter(r), S=randLetter(r);
+      const [L1,L2]=randTwoLetters(r,new Set([B,S]));
+      return `${B} reflect ${S} across line ${L1},${L2}`;    // 6 tokens
     }
-    function tplMidpoint(r){
-      const A=randLetter(r), B=randLetter(r), C=randLetter(r);
-      return `${C} midpoint of ${A},${B}`;
+    function tplProject(r){
+      const A=randLetter(r), S=randLetter(r);
+      const [L1,L2]=randTwoLetters(r,new Set([A,S]));
+      return `${A} project ${S} to line ${L1},${L2}`;        // 6 tokens
     }
-    function tplBisect(r){
-      return `V bisects angle SUT at U`;
+    function tplScale(r){
+      const B=randLetter(r), A=randLetter(r);
+      const k=2+Math.floor(r()*5);
+      return `${B} scale${k} U from ${A}`;                   // 5 tokens
     }
     function tplLattice(r){
       const T=randLetter(r), S=randLetter(r);
       const e=1+Math.floor(r()*3), n=1+Math.floor(r()*3);
-      return `${T} ${e} east ${n} north ${S}`;
+      return `${T} ${e} east ${n} north ${S}`;               // 6 tokens
     }
-    function tplProject(r){
-      const A=randLetter(r), S=randLetter(r);
-      const [L1,L2] = randTwoLetters(r, new Set([A,S]));
-      return `${A} project ${S} to line ${L1},${L2}`;
+    function tplMidpoint(r){
+      const A=randLetter(r), B=randLetter(r), C=randLetter(r);
+      return `${C} midpoint of ${A},${B}`;                   // 4 tokens (A,B is one)
     }
-    function tplScale(r){
-      const B=randLetter(r), A=randLetter(r);
-      const k=2+Math.floor(r()*3);
-      return `${B} scale${k} U from ${A}`;
+    function tplBisect(r){
+      return `V bisects angle SUT at U`;                     // 6 tokens
     }
     function tplDir(r){
-      const C=randLetter(r);
-      return `${C} ${pick(r,DIRS)} of U`;
+      const C=randLetter(r); const dirs=['north','south','east','west'];
+      return `${C} ${pick(r,dirs)} of U`;                    // 4 tokens
     }
-    const families=[tplRotate,tplReflectLine,tplMidpoint,tplBisect,tplLattice,tplProject,tplScale,tplDir];
+    const families=[tplRotate,tplReflectLine,tplProject,tplScale,tplLattice,tplMidpoint,tplBisect,tplDir];
 
     function generate(r){
       for(let guard=0; guard<1200; guard++){
         const f = pick(r,families);
         const txt = sanitizeText(f(r));
-        if(!within7Words(txt)) continue;
+        if(!withinBudget(txt,7)) continue;
         if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(txt)) continue;
         return { text: txt, touched: lettersTouched(txt) };
       }
@@ -392,25 +393,29 @@
 
   // ---------- Arithmetic generator ----------
   const ArithGen=(function(){
-    const LTRS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-    const BIN=['+','−','×','÷'];
-    function pick(r,a){return a[Math.floor(r()*a.length)];}
-    function L(r){return pick(r,LTRS);}
-    function maybeDigit(r){ return r()<0.6 ? String(2+Math.floor(r()*2)) : ''; }
-
     function build(r){
-      const a = L(r) + (r()<0.5? maybeDigit(r):'');
-      const useSqrt = r()<0.5;
-      const b = (useSqrt?'√':'') + L(r) + (r()<0.35? maybeDigit(r):'');
-      const op = pick(r,BIN);
-      const tail = r()<0.5 ? (op+' '+b) : (op+' '+ 'inverted' +' '+ L(r));
-      const expr = (a+' '+tail).trim();
-      return sanitizeText(expr);
+      // choose a dense unary+binary stack; digits are polymorphic downstream
+      const LTRS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+      function L(){ return LTRS[Math.floor(r()*LTRS.length)]; }
+      function d(p=0.6){ return (r()<p) ? String(2+Math.floor(r()*5)) : ''; }
+      const BIN=['+','−','×','÷'];
+      const unary = (r()<0.5?'√':'inverted ');
+      const a = (r()<0.5? '√' : '') + L() + (r()<0.45? d(0.5):'');     // token 1 (maybe √) + token 2
+      const op1 = BIN[Math.floor(r()*BIN.length)];                      // token
+      const b = L() + (r()<0.7? d(0.7):'');                             // token
+      const useTwoOps = r()<0.6;
+      if(!useTwoOps){
+        return sanitizeText(`${a} ${op1} ${b}`);                        // 3–5 tokens
+      } else {
+        const op2 = BIN[Math.floor(r()*BIN.length)];
+        const tail = (r()<0.5 ? `inverted ${L()}` : `√${L()}`);         // 1–2 tokens
+        return sanitizeText(`${a} ${op1} ${b} ${op2} ${tail}`);         // 5–6 tokens
+      }
     }
     function generate(r){
       for(let guard=0; guard<1600; guard++){
         const txt = build(r);
-        if(!within7Words(txt)) continue;
+        if(!withinBudget(txt,7)) continue;
         if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(txt)) continue;
         return { text: txt, touched: lettersTouched(txt) };
       }
@@ -582,6 +587,7 @@
       for(let guard=0; guard<200; guard++){
         const g = mode==='arith' ? ArithGen.generate(rng) : GeomGen.generate(rng);
         const text = g.text;
+        if (tokCount(text) > 7) continue;   // extra safety
         // reject surface duplicates
         if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(text)) continue;
         // Apply to shadow store
@@ -604,6 +610,7 @@
         const modeTry = mode; // keep same mode for match
         const g = modeTry==='arith' ? ArithGen.generate(rng) : GeomGen.generate(rng);
         const text = g.text;
+        if (tokCount(text) > 7) continue;   // extra safety
         if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(text)) continue;
         const S1 = cloneStore(S);
         const res = (modeTry==='arith') ? applyArithPremise(S1,text) : applyGeomPremise(S1,text);
