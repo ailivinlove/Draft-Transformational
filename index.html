@@ -303,23 +303,6 @@
   })();
 
   // ---------- Geometric generator ----------
-  function varyLineByDigitOrSalt(r, exclude){
-    const excl = new Set(exclude||[]);
-    let i = 1 + Math.floor(r()*24);
-    let j = 2 + Math.floor(r()*24);
-    const pick = (idx)=>{
-      const fn = (typeof Phi === 'function') ? Phi : (k=>String.fromCharCode(65+((k%26)+26)%26));
-      return fn(idx);
-    };
-    let L1 = pick(i);
-    let L2 = pick(j);
-    let guard=0;
-    while(excl.has(L1) && guard<26){ i+=5; L1 = pick(i); guard++; }
-    guard=0;
-    while((excl.has(L2) || L2===L1) && guard<26){ j+=7; L2 = pick(j); guard++; }
-    return [L1,L2];
-  }
-
   const GeomGen=(function(){
     const ANGLES=[15,30,36,45,54,60,72,75,90,108,120,135,144,150,165,180];
     const DIRS=['north','south','east','west','northeast','northwest','southeast','southwest'];
@@ -344,7 +327,7 @@
     }
     function tplReflectLine(r){
       const B=randLetter(r), S=randLetter(r,new Set());
-      const [L1,L2] = varyLineByDigitOrSalt(r, [B,S]);
+      const [L1,L2] = randTwoLetters(r, new Set([S,B]));
       return `${B} reflect ${S} across line ${L1},${L2}`;
     }
     function tplMidpoint(r){
@@ -361,7 +344,7 @@
     }
     function tplProject(r){
       const A=randLetter(r), S=randLetter(r);
-      const [L1,L2] = varyLineByDigitOrSalt(r, [A,S]);
+      const [L1,L2] = randTwoLetters(r, new Set([A,S]));
       return `${A} project ${S} to line ${L1},${L2}`;
     }
     function tplScale(r){
@@ -380,8 +363,6 @@
         const f = pick(r,families);
         const txt = sanitizeText(f(r));
         if(!within7Words(txt)) continue;
-        if(window.IW_Novelty && !IW_Novelty.isNovel(txt)) continue;
-        if(window.IW_Novelty) IW_Novelty.record(txt);
         return { text: txt, touched: lettersTouched(txt) };
       }
       throw new Error('GeomGen failed: novelty budget exhausted');
@@ -410,8 +391,6 @@
       for(let guard=0; guard<1600; guard++){
         const txt = build(r);
         if(!within7Words(txt)) continue;
-        if(window.IW_Novelty && !IW_Novelty.isNovel(txt)) continue;
-        if(window.IW_Novelty) IW_Novelty.record(txt);
         return { text: txt, touched: lettersTouched(txt) };
       }
       throw new Error('ArithGen failed: novelty budget exhausted');
@@ -427,242 +406,96 @@
     return Array.from(set);
   }
 
-</script>
-<script>
-// === Context maps and helpers ===
-const ANGLE_MAP = {2:36, 3:54, 4:72, 5:108, 6:144};
-const SCALE_RATIO = {2:[3,1], 3:[2,1], 4:[5,2], 5:[3,2], 6:[5,1]};
-function isPrime(n){return n===2||n===3||n===5;}
-function isEven(n){return (n%2)===0;}
-function clampPhase(p){return ((p%360)+360)%360;}
-
-// per-run salt for variability (reuse if you already have one)
-(function(){
-  const K='iw_salt_v2';
-  if(!localStorage.getItem(K)){
-    const r=(crypto&&crypto.getRandomValues)?(crypto.getRandomValues(new Uint32Array(1))[0]>>>0):(Date.now()>>>0);
-    localStorage.setItem(K,String(r));
-  }
-  window.IW_SALT = parseInt(localStorage.getItem(K)||'0',10)>>>0;
-})();
-function Phi(idx){ // salted letter picker for lines
-  const base = (IW_SALT + idx*17) % 26;
-  return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[base];
-}
-</script>
-
-<script>
-/**
- * Apply a digit's polymorphic role to the given letter state.
- * ctx = { kind: 'arith'|'geom'|'lattice'|'scale'|'rotate'|'project'|'reflect'|'none',
- *         nextToken?:string, prevToken?:string }
- * S is the canonical store; L is letter key.
- */
-function applyDigitRole(S, L, d, ctx){
-  d = Math.max(0, Math.min(9, parseInt(d,10)||0));
-  if(!d || !S[L]) return;
-
-  // 1) Context-gated primary effect
-  if(ctx.kind==='scale' && SCALE_RATIO[d]){
-    // store intended ratio on the letter (consumed by scale op)
-    S[L]._ratio = SCALE_RATIO[d]; // [num,den]
-  } else if((ctx.kind==='rotate' || ctx.kind==='geom') && ANGLE_MAP[d]){
-    // queue a latent rotation angle (consumed by the next rotate or by context)
-    S[L]._latentRot = ANGLE_MAP[d];
-  } else if(ctx.kind==='lattice'){
-    S[L]._step = d; // lattice step magnitude
-  } else if(ctx.kind==='arith'){
-    // in arithmetic, the digit is a weight applied to the NEXT operand
-    S[L]._weightNext = (d||1);
-  } else if(ctx.kind==='project'){
-    // choose hashed endpoints indices from d; small deterministic spread
-    S[L]._linePick = [ (d+1), (d+7) ];
-  } else {
-    // fallback: mild intensity bump to avoid "no-op"
-    S[L].intensity *= (1 + 0.15*d);
-  }
-
-  // 2) Parity → orientation flip post local op
-  if(isEven(d)){ S[L] = T.invert(S[L]); }
-
-  // 3) Prime/composite side-channel
-  if(isPrime(d)){ S[L].level += 1; }
-  else if(d>1){ S[L].phase = clampPhase((S[L].phase||0)+45); }
-}
-</script>
-
-<script>
   // ---------- Parser + evaluator ----------
   function applyGeomPremise(S0, text){
     const S = cloneStore(S0);
     const touched = lettersTouched(text);
-
-    const tokens = text
-      .replace(/—|–/g,'-')
-      .replace(/([,])/g,' $1 ')
-      .replace(/\s+/g,' ')
-      .trim()
-      .split(' ')
-      .filter(Boolean);
-
-    function geomContextAt(idx){
-      const prev = tokens[idx-1]||'';
-      const next = tokens[idx+1]||'';
-      const dirWord = /^(north|south|east|west|northeast|northwest|southeast|southwest)$/i;
-      if(dirWord.test(next) || dirWord.test(prev)) return {kind:'lattice', prevToken:prev, nextToken:next};
-      if(/scale/i.test(prev) || /scale/i.test(next) || /\bscale\d*/i.test(text)) return {kind:'scale', prevToken:prev, nextToken:next};
-      if(/rotate/i.test(prev) || /rotate/i.test(next) || /\brotate\d*/i.test(text)) return {kind:'rotate', prevToken:prev, nextToken:next};
-      if(/project/i.test(text)) return {kind:'project', prevToken:prev, nextToken:next};
-      if(/reflect/i.test(text)) return {kind:'reflect', prevToken:prev, nextToken:next};
-      return {kind:'geom', prevToken:prev, nextToken:next};
+    const r = /(\brotate(\d+)\b)|(\breflect\b)|(\bscale(\d+)\b)|(\bproject\b)|(\bmidpoint\b)|(\b(north|south|east|west|northeast|northwest|southeast|southwest)\b)|(\bbisects\b)|(\bsame line\b)/i;
+    // Minimal deterministic effects tied to keywords:
+    if(/rotate(\d+)/i.test(text)){
+      const m = /rotate(\d+)/i.exec(text); const deg = parseInt(m[1],10)||0;
+      for(const L of touched){ S[L]=T.rotate(S[L],deg); }
     }
-
-    for(let i=0;i<tokens.length;i++){
-      const m = /^([A-Z])(\d+)$/.exec(tokens[i]);
-      if(m){
-        const L=m[1], d=m[2];
-        applyDigitRole(S, L, d, geomContextAt(i));
-        tokens[i]=L;
-      }
+    if(/\breflect\b/i.test(text) && !/across\s+line\s+([A-Z])\s*,\s*([A-Z])/i.test(text)){
+      for(const L of touched){ S[L]=T.reflectAcrossCenter(S[L]); }
     }
-
-    // 1) Lattice: "<L> e east n north X"
-    if(/\b(\d+)\s+east\s+(\d+)\s+north\b/i.test(text)){
-      const m = /([A-Z])\s+(\d+)\s+east\s+(\d+)\s+north\s+([A-Z])/i.exec(text) ||
-                /([A-Z])\s+(\d+)\s+west\s+(\d+)\s+south\s+([A-Z])/i.exec(text);
-      if(m){
-        const L = m[1], ex = parseInt(m[2],10), ny = parseInt(m[3],10);
-        const east = /east/i.test(text)? ex : -ex;
-        const north = /north/i.test(text)? ny : -ny;
-        // allow digit role to override step if present
-        const step = S[L]._step || 1;
-        S[L].pos.x += east*step; S[L].pos.y += north*step;
-      }
+    if(/\bscale(\d+)/i.test(text)){
+      const m = /\bscale(\d+)/i.exec(text); const k = parseInt(m[1],10)||2;
+      for(const L of touched){ S[L]=T.scaleFromCenter(S[L],k); }
     }
-
-    // 2) Project/reflect lines with arbitrary endpoints "line X,Y"
-    let lineMatch = /line\s+([A-Z])\s*,\s*([A-Z])/i.exec(text);
-    if(/\bproject\b/i.test(text) && lineMatch){
-      const L1=lineMatch[1], L2=lineMatch[2];
-      for(const L of touched){ if(L!==L1 && L!==L2){ S[L]=T.projectToLineUV(S[L], S[L1], S[L2]); } }
+    if(/\bproject\b/i.test(text) && /line\s+([A-Z])\s*,\s*([A-Z])/i.test(text)){
+      const m = /line\s+([A-Z])\s*,\s*([A-Z])/i.exec(text);
+      const L1 = m[1], L2 = m[2];
+      const P1=S[L1], P2=S[L2];
+      for(const L of touched){ if(L!==L1 && L!==L2){ S[L]=T.projectToLineUV(S[L],P1,P2);} }
     }
-    if(/\breflect\b/i.test(text) && lineMatch){
-      const L1=lineMatch[1], L2=lineMatch[2];
-      for(const L of touched){
-        if(L===L1 || L===L2) continue;
+    if(/\breflect\b/i.test(text) && /across\s+line\s+([A-Z])\s*,\s*([A-Z])/i.test(text)){
+      const m = /across\s+line\s+([A-Z])\s*,\s*([A-Z])/i.exec(text);
+      const L1 = m[1], L2 = m[2];
+      for (const L of touched){
+        if (L===L1 || L===L2) continue;
         const proj = T.projectToLineUV(S[L], S[L1], S[L2]);
-        const mx = 2*proj.pos.x - S[L].pos.x, my = 2*proj.pos.y - S[L].pos.y;
+        const mx = 2*proj.pos.x - S[L].pos.x;
+        const my = 2*proj.pos.y - S[L].pos.y;
         S[L] = {...S[L], pos:{x:mx,y:my}, polarity:-S[L].polarity};
       }
     }
-
-    // 3) Scale with ratio lock from digit role
-    if(/\bscale(\d*)\b/i.test(text)){
-      const m = /([A-Z]).*scale(\d*)\s+U\s+from\s+([A-Z])/i.exec(text);
-      if(m){
-        const B=m[1], ktxt=m[2], A=m[3];
-        const ratio = (S[B]._ratio || SCALE_RATIO[parseInt(ktxt||'0',10)] || null);
-        if(ratio){
-          const [num,den]=ratio;
-          // simple center-from scaling using ratio as magnitude
-          const k = num/Math.max(1,den);
-          S[B]=T.scaleFromCenter(S[B], k);
-        }
+    if(/\bmidpoint\b/i.test(text)){
+      if(touched.includes('A') && touched.includes('B') && S['C']){
+        const m=T.midpoint(S['A'],S['B']); S['C']={...S['C'],pos:{x:m.x,y:m.y}};
       }
     }
-
-    // 4) Rotations: explicit rotateθ or latent queue
-    let rot = /rotate(\d+)/i.exec(text);
-    if(rot){
-      const deg = parseInt(rot[1],10)||0;
-      for(const L of touched){ S[L]=T.rotate(S[L], deg); }
-    } else {
-      // latent rotation if any letter queued it
-      for(const L of touched){
-        if(S[L]._latentRot){ S[L]=T.rotate(S[L], S[L]._latentRot); S[L]._latentRot=0; }
-      }
-    }
-
-    // 5) Cardinal/diagonal words
     if(/\bnorth\b/i.test(text)) for(const L of touched){ S[L]=T.north(S[L])}
     if(/\bsouth\b/i.test(text)) for(const L of touched){ S[L]=T.south(S[L])}
     if(/\beast\b/i.test(text))  for(const L of touched){ S[L]=T.east(S[L])}
     if(/\bwest\b/i.test(text))  for(const L of touched){ S[L]=T.west(S[L])}
-    if(/\bnortheast\b/i.test(text)) for(const L of touched){ S[L]=T.north(T.east(S[L])) }
-    if(/\bnorthwest\b/i.test(text)) for(const L of touched){ S[L]=T.north(T.west(S[L])) }
-    if(/\bsoutheast\b/i.test(text)) for(const L of touched){ S[L]=T.south(T.east(S[L])) }
-    if(/\bsouthwest\b/i.test(text)) for(const L of touched){ S[L]=T.south(T.west(S[L])) }
-
+    // diagonals as combined moves
+    if(/\bnortheast\b/i.test(text)){ for(const L of touched){ S[L]=T.north(T.east(S[L])) } }
+    if(/\bnorthwest\b/i.test(text)){ for(const L of touched){ S[L]=T.north(T.west(S[L])) } }
+    if(/\bsoutheast\b/i.test(text)){ for(const L of touched){ S[L]=T.south(T.east(S[L])) } }
+    if(/\bsouthwest\b/i.test(text)){ for(const L of touched){ S[L]=T.south(T.west(S[L])) } }
     return { S, touched };
   }
 
   function applyArithPremise(S0, text){
     const S = cloneStore(S0);
-    // Tokenize: keep operators separate
-    let toks = text
-      .replace(/—|–/g,'-')
-      .replace(/([+\-×÷*/^()])/g,' $1 ')
-      .replace(/\s+/g,' ')
-      .trim()
-      .split(' ')
-      .filter(Boolean);
-
-    // Pass 1: unary stacks and letter^k, √L, inverted L
-    for(let i=0;i<toks.length;i++){
-      let t=toks[i];
-
-      // √L
-      if(/^√[A-Z]$/.test(t)){ const L=t.slice(1); S[L]=T.sqrt(S[L]); toks[i]=L; continue; }
-
-      // inverted L
-      if(t.toLowerCase()==='inverted' && /^[A-Z]$/.test(toks[i+1]||'')){ const L=toks[i+1]; S[L]=T.invert(S[L]); }
-
-      // A^k ⇒ level +k
-      if(/^[A-Z]\^\d+$/.test(t)){ const [L,exp]=t.split('^'); S[L]=T.powLevel(S[L], parseInt(exp,10)||1); toks[i]=L; }
+    // Tokenize simple form like "A2 ÷ √B + inverted D"
+    const tokens = text.split(/\s+/);
+    // local scalars by letter like A2
+    function parseLetter(tok){
+      const m = /^([A-Z])(\d+)?$/.exec(tok);
+      if(!m) return null;
+      return {L:m[1], k: m[2]?parseInt(m[2],10):null};
     }
-
-    // Pass 2: letter-digit suffix roles (A2, B3...)
-    // Detect coarse context from neighbors to drive applyDigitRole
-    function contextAt(idx){
-      const prev = toks[idx-1]||'';
-      const next = toks[idx+1]||'';
-      const dirWord = /(north|south|east|west|northeast|northwest|southeast|southwest)/i;
-      let kind='arith';
-      if(/\bscale\d*\b/i.test(text) || /scale/i.test(prev) || /scale/i.test(next)) kind='scale';
-      else if(/\b(rotate\d*|rotate)\b/i.test(text) || /rotate/i.test(prev) || /rotate/i.test(next)) kind='rotate';
-      else if(/\bproject\b/i.test(text)) kind='project';
-      else if(/\breflect\b/i.test(text)) kind='reflect';
-      else if(dirWord.test(text) || dirWord.test(next)) kind='lattice';
-      return {kind, prevToken:prev, nextToken:next};
+    // pass 1: apply unary prefixes and inverted
+    for(let i=0;i<tokens.length;i++){
+      if(/^√[A-Z]/.test(tokens[i])){
+        const L=tokens[i].slice(1,2); S[L]=T.sqrt(S[L]);
+        tokens[i]=L;
+      } else if(tokens[i].toLowerCase()==='inverted' && i+1<tokens.length && /^[A-Z]/.test(tokens[i+1])){
+        const L=tokens[i+1][0]; S[L]=T.invert(S[L]);
+      }
+      // exponent syntax like A^2 => level +2
+      if(/^[A-Z]\^\d+$/.test(tokens[i])){
+        const [L,exp]=tokens[i].split('^'); S[L]=T.powLevel(S[L], parseInt(exp,10)||1);
+        tokens[i]=L;
+      }
+      // attach scalar digit after letter means local mul intent but we encode in intensity baseline
+      const m=/^([A-Z])(\d+)$/.exec(tokens[i]); if(m){ const L=m[1],k=parseInt(m[2],10); S[L]=T.mul(S[L],k); tokens[i]=L; }
     }
-    for(let i=0;i<toks.length;i++){
-      const m = /^([A-Z])(\d+)$/.exec(toks[i]);
-      if(m){
-        const L=m[1], d=m[2];
-        applyDigitRole(S, L, d, contextAt(i));
-        toks[i]=L; // keep surface short
+    // pass 2: binary ops in sequence left→right
+    for(let i=0;i<tokens.length;i++){
+      const t=tokens[i];
+      if(t==='+'){ // add one unit to next letter
+        const nxt = parseLetter(tokens[i+1]||''); if(nxt) S[nxt.L]=T.add(S[nxt.L],1);
+      } else if(t==='−' || t==='-'){
+        const nxt = parseLetter(tokens[i+1]||''); if(nxt) S[nxt.L]=T.sub(S[nxt.L],1);
+      } else if(t==='×' || t==='*'){
+        const nxt = parseLetter(tokens[i+1]||''); if(nxt) S[nxt.L]=T.mul(S[nxt.L],2);
+      } else if(t==='÷' || t=='/'){
+        const nxt = parseLetter(tokens[i+1]||''); if(nxt) S[nxt.L]=T.div(S[nxt.L],2);
       }
     }
-
-    // Pass 3: left→right binary ops with next-operand weighting (asymmetric)
-    function parseLetter(tok){ return /^[A-Z]$/.test(tok)? tok : null; }
-    for(let i=0;i<toks.length;i++){
-      const op=toks[i];
-      if(['+','-','−','×','*','÷','/'].includes(op)){
-        const nextL = parseLetter(toks[i+1]||'');
-        if(nextL){
-          // apply optional weight from previous letter if set
-          const prevL = parseLetter(toks[i-1]||'');
-          const w = (prevL && S[prevL] && S[prevL]._weightNext) ? S[prevL]._weightNext : 1;
-          // Implement minimal channel effect per op on the next operand
-          if(op=== '+'){ S[nextL]=T.add(S[nextL], w); }
-          else if(op==='-'||op==='−'){ S[nextL]=T.sub(S[nextL], w); }
-          else if(op==='×'||op==='*'){ S[nextL]=T.mul(S[nextL], Math.max(2,w)); }
-          else if(op==='÷'||op==='/'){ S[nextL]=T.div(S[nextL], Math.max(2,w)); }
-        }
-      }
-    }
-
     const touched = lettersTouched(text);
     return { S, touched };
   }
