@@ -390,6 +390,7 @@
     function done(){return t>=totalTrials}
     return { init, nextTrial, done, get t(){return t}, get N(){return N}, get log(){return log} };
   })();
+  window.Game = Game;
 
   // ---------- UI binding ----------
   const ui={
@@ -425,6 +426,7 @@
     tr.innerHTML=`<td>${Game.t}</td><td><code>${e.text}</code></td><td>${e.mode}</td><td>${e.isMatch}</td>`;
     ui.logBody.appendChild(tr);
   }
+  window.renderEntry = renderEntry;
 
   function updateAcc(){
     const total = stats.hit+stats.miss+stats.fa+stats.cr;
@@ -442,6 +444,7 @@
     startTime = performance.now();
     renderEntry(curEntry);
   }
+  window.next = next;
 
   function register(respMatch){
     if(!curEntry) return;
@@ -514,6 +517,7 @@
       if (warmed) return;
       if (!window.speechSynthesis) return;
       await waitForVoices(1200);
+      try { if (window.speechSynthesis && speechSynthesis.paused) speechSynthesis.resume(); } catch(_){ }
       try{
         // Tiny unlock utterance. Some engines ignore empty strings, so speak a dot very quietly.
         const u = new SpeechSynthesisUtterance('.');
@@ -534,7 +538,12 @@
         if (!window.speechSynthesis) return;
         const t = String(text||'').trim();
         if (!t) return;
+
+        // ensure voices loaded and engine resumed
         await warmup();
+        try { speechSynthesis.cancel(); } catch(_){ }
+        try { if (speechSynthesis.paused) speechSynthesis.resume(); } catch(_){ }
+
         const u = new SpeechSynthesisUtterance(t);
         const v = pickVoice();
         if (v) u.voice = v;
@@ -542,9 +551,11 @@
         u.rate = (opts && opts.rate) || 1.0;
         u.pitch = (opts && opts.pitch) || 1.0;
         u.volume = (opts && opts.volume) || 1.0;
-        // Cancel any queued utterances before speaking current premise
-        try { speechSynthesis.cancel(); } catch(_){}
-        speechSynthesis.speak(u);
+
+        // small async tick improves reliability on Safari/Chrome
+        setTimeout(()=>{
+          try { speechSynthesis.speak(u); } catch(e){ console.error('speak() failed', e); }
+        }, 0);
       } catch(e){ console.error('speak() failed', e); }
     };
 
@@ -579,7 +590,7 @@
         var q = ratioEl ? Math.min(1,Math.max(0, parseFloat(ratioEl.value||'0.35'))) : 0.35;
 
         // Initialize game
-        if (window.Game && typeof Game.init==='function' && typeof Game.nextTrial==='function') {
+        if (typeof Game !== 'undefined' && Game && typeof Game.init==='function' && typeof Game.nextTrial==='function') {
           // reset scoreboard table if present
           var logBody = document.getElementById('logBody');
           if (logBody) logBody.innerHTML='';
@@ -587,6 +598,8 @@
           var accEl=document.getElementById('mAcc'); if (accEl) accEl.textContent='0%';
 
           Game.init(seed, nback, trials, q);
+
+          try { if (window.speechSynthesis) { speechSynthesis.cancel(); speechSynthesis.resume(); } } catch(_){ }
 
           // First trial
           var entry;
