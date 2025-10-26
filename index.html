@@ -177,6 +177,42 @@
     return { angleMap, ratioMap, isPrime, isEven, applyParityAndPrime };
   })();
 
+</script>
+
+<script>
+// --- Entangled digit mask: affects OWNER and NEXT operand/op ---
+const Entangle = (function(){
+  // magnitude tables
+  const angleMap = {2:36,3:54,4:72,5:108,6:144};
+  const weightMap = {2:2,3:3,4:4,5:5,6:6};
+  function isPrime(n){ return n===2||n===3||n===5;}
+  function isEven(n){ return n%2===0;}
+  // apply to a single symbol state
+  function applyLocal(s,d){
+    let out = T.mul(s, Math.max(2,d));                   // intensity
+    if (angleMap[d]) out = T.rotate(out, angleMap[d]);   // micro-rotation
+    if (isEven(d)) out = T.invert(out);                  // parity on even
+    if (isPrime(d)) out = T.powLevel(out,1);             // level on prime
+    if (d===4||d===6) out = {...out, phase:(out.phase+45)%360}; // phase on composite
+    return out;
+  }
+  // route weight to the NEXT operand around a binary op
+  function routeNext(op, nextState, d){
+    if (!nextState) return null;
+    const k = weightMap[d] || Math.max(2,d);
+    if (op==='+')  return T.add(nextState, k);
+    if (op==='−' || op==='-') return T.sub(nextState, k);
+    if (op==='×' || op==='*') return T.mul(nextState, k);
+    if (op==='÷' || op==='/') return T.div(nextState, k);
+    return nextState;
+  }
+  return { applyLocal, routeNext, angleMap };
+})();
+
+</script>
+
+<script>
+
   // ---- Cross-trial rotation context counter ----
   window.RotCtx = { recent:0, bump(){ this.recent=Math.min(2,this.recent+1); }, decay(){ this.recent=Math.max(0,this.recent-1);} };
 
@@ -376,7 +412,7 @@
       const C=randLetter(r); const dirs=['north','south','east','west'];
       return `${C} ${pick(r,dirs)} of U`;                    // 4 tokens
     }
-    const families=[tplRotate,tplReflectLine,tplProject,tplScale,tplLattice,tplMidpoint,tplBisect,tplDir];
+    const families=[tplMidpoint,tplDir,tplRotate,tplReflectLine,tplProject,tplScale,tplLattice,tplBisect];
 
     function generate(r){
       for(let guard=0; guard<1200; guard++){
@@ -394,22 +430,25 @@
   // ---------- Arithmetic generator ----------
   const ArithGen=(function(){
     function build(r){
-      // choose a dense unary+binary stack; digits are polymorphic downstream
-      const LTRS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-      function L(){ return LTRS[Math.floor(r()*LTRS.length)]; }
-      function d(p=0.6){ return (r()<p) ? String(2+Math.floor(r()*5)) : ''; }
-      const BIN=['+','−','×','÷'];
-      const unary = (r()<0.5?'√':'inverted ');
-      const a = (r()<0.5? '√' : '') + L() + (r()<0.45? d(0.5):'');     // token 1 (maybe √) + token 2
-      const op1 = BIN[Math.floor(r()*BIN.length)];                      // token
-      const b = L() + (r()<0.7? d(0.7):'');                             // token
-      const useTwoOps = r()<0.6;
-      if(!useTwoOps){
-        return sanitizeText(`${a} ${op1} ${b}`);                        // 3–5 tokens
+      const LTRS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''); const BIN=['+','−','×','÷'];
+      const pick=L=>L[Math.floor(r()*L.length)];
+      const L=()=>pick(LTRS);
+      const d=()=> (r()<0.65 ? String(2+Math.floor(r()*5)) : '');
+      const form = r()<0.5 ? 1 : 2;
+      if (form===1){
+        // 3–5 tokens: √A op Bk  or  inverted A op Bk
+        const a = (r()<0.5? '√':'inverted ') + L();
+        const op = pick(BIN);
+        const b = L() + d();
+        return sanitizeText(`${a} ${op} ${b}`);
       } else {
-        const op2 = BIN[Math.floor(r()*BIN.length)];
-        const tail = (r()<0.5 ? `inverted ${L()}` : `√${L()}`);         // 1–2 tokens
-        return sanitizeText(`${a} ${op1} ${b} ${op2} ${tail}`);         // 5–6 tokens
+        // 5–6 tokens: A^k op Bk op (√C | inverted C)
+        const a = L() + '^' + (2+Math.floor(r()*3));
+        const op1 = pick(BIN);
+        const b = L() + d();
+        const op2 = pick(BIN);
+        const tail = (r()<0.5? `√${L()}` : `inverted ${L()}`);
+        return sanitizeText(`${a} ${op1} ${b} ${op2} ${tail}`);
       }
     }
     function generate(r){
@@ -507,64 +546,86 @@
         const m=/^([A-Z])(\d)$/.exec(tok);
         if(!m) continue;
         const L=m[1], d=parseInt(m[2],10);
-        const ang = DigitMask.angleMap[d]; if(!ang) continue;
+        const ang = Entangle.angleMap[d]; if(!ang) continue;
         S[L]=T.rotate(S[L],ang);
-        S[L]=DigitMask.applyParityAndPrime(S[L], d);
       }
       RotCtx.decay();
     }
     return { S, touched };
   }
 
+</script>
+
+<script>
+const OpCtx = { lastOp:null, touch:null, clear(){ this.lastOp=null; this.touch=null; } };
+</script>
+
+<script>
   function applyArithPremise(S0, text){
     const S = cloneStore(S0);
     const tokens = text.split(/\s+/).filter(Boolean);
+    OpCtx.clear();
 
     // helper
-    function parseLetter(tok){ const m=/^([A-Z])(\d+)?$/.exec(tok); return m?{L:m[1],d:m[2]?parseInt(m[2],10):null}:null; }
+    function parseLD(tok){ const m=/^([A-Z])(\d)?$/.exec(tok); return m?{L:m[1],d:m[2]?parseInt(m[2],10):null}:null; }
 
-    // pass 1: unary stacks and local digit masks on letters (intensity baseline)
+    // PASS 1 — unary stacks + local digit mask on owners
     for(let i=0;i<tokens.length;i++){
-      // sqrt attached: √A
-      if(/^√[A-Z]/.test(tokens[i])){ const L=tokens[i][1]; S[L]=T.sqrt(S[L]); tokens[i]=L; }
-      // inverted X
+      // √A → sqrt then collapse to A
+      if(/^√[A-Z]$/.test(tokens[i])){ const L=tokens[i][1]; S[L]=T.sqrt(S[L]); tokens[i]=L; }
+      // inverted X → invert (keep tokens to preserve budget; “inverted” counts already)
       if(tokens[i].toLowerCase()==='inverted' && i+1<tokens.length && /^[A-Z]/.test(tokens[i+1])){
         const L=tokens[i+1][0]; S[L]=T.invert(S[L]);
       }
-      // exponent A^k => level +k
+      // exponent A^k → level +k, collapse to A
       if(/^[A-Z]\^\d+$/.test(tokens[i])){ const [L,exp]=tokens[i].split('^'); S[L]=T.powLevel(S[L], parseInt(exp,10)||1); tokens[i]=L; }
-      // letter with digit suffix A2 … A6
+      // owner with digit suffix A2..A6 → entangled local mask now
       const m=/^([A-Z])(\d)$/.exec(tokens[i]);
       if(m){
         const L=m[1], d=parseInt(m[2],10);
-        // base intensity weighting for visibility
-        S[L]=T.mul(S[L], Math.max(2,d));
-        // latent rotation if context has recent rotates
-        if (window.RotCtx && RotCtx.recent>0 && DigitMask.angleMap[d]) {
-          S[L]=T.rotate(S[L], DigitMask.angleMap[d]);
-        }
-        // parity/prime tweaks
-        S[L]=DigitMask.applyParityAndPrime(S[L], d);
-        tokens[i]=L;
+        S[L]=Entangle.applyLocal(S[L], d);
+        tokens[i]=L; // collapse to the letter to stay within ≤7 tokens downstream
       }
     }
 
-    // pass 2: directional binary routing; the digit near operator weights the NEXT operand
+    // PASS 2 — directional binary routing + operator carry
     for(let i=0;i<tokens.length;i++){
-      const t=tokens[i];
-      if(t==='+'){
-        const nxt=parseLetter(tokens[i+1]||''); if(nxt){ S[nxt.L]=T.add(S[nxt.L], nxt.d?Math.max(1,nxt.d):1); if(nxt.d) S[nxt.L]=DigitMask.applyParityAndPrime(S[nxt.L],nxt.d); }
-      } else if(t==='−' || t==='-'){
-        const nxt=parseLetter(tokens[i+1]||''); if(nxt){ S[nxt.L]=T.sub(S[nxt.L], nxt.d?Math.max(1,nxt.d):1); if(nxt.d) S[nxt.L]=DigitMask.applyParityAndPrime(S[nxt.L],nxt.d); }
-      } else if(t==='×' || t==='*'){
-        const nxt=parseLetter(tokens[i+1]||''); if(nxt){ const k=nxt.d?Math.max(2,nxt.d):2; S[nxt.L]=T.mul(S[nxt.L],k); if(nxt.d) S[nxt.L]=DigitMask.applyParityAndPrime(S[nxt.L],nxt.d); }
-      } else if(t==='÷' || t==='/'){
-        const nxt=parseLetter(tokens[i+1]||''); if(nxt){ const k=nxt.d?Math.max(2,nxt.d):2; S[nxt.L]=T.div(S[nxt.L],k); if(nxt.d) S[nxt.L]=DigitMask.applyParityAndPrime(S[nxt.L],nxt.d); }
+      const t = tokens[i];
+      if(t==='+'||t==='−'||t==='-'||t==='×'||t==='*'||t==='÷'||t==='/'){
+        OpCtx.lastOp = t;
+        continue;
+      }
+      const cur = parseLD(tokens[i]);
+      if(!cur) continue;
+
+      // If previous token had a digit (captured in PASS 1) we already applied local.
+      // Now apply operator-coupled carry: the weight routes to NEXT operand when a digit suffix exists on that next operand.
+      const nxt = (i+1<tokens.length)?parseLD(tokens[i+1]):null;
+      if (OpCtx.lastOp && nxt && nxt.d==null){
+        // if NEXT lacks a digit, but OWNER had one earlier, reuse OWNER's implied weight=2 silently
+        S[nxt.L] = Entangle.routeNext(OpCtx.lastOp, S[nxt.L], 2);
+        OpCtx.lastOp = null;
+      } else if (OpCtx.lastOp && nxt && nxt.d!=null){
+        // NEXT has a digit → route that exact digit weight to NEXT before collapsing
+        S[nxt.L] = Entangle.routeNext(OpCtx.lastOp, S[nxt.L], nxt.d);
+        OpCtx.lastOp = null;
       }
     }
 
-    const touched = lettersTouched(text);
-    return { S, touched };
+    // LATENT rotations: if prior explicit rotate occurred recently (RotCtx.recent>0),
+    // inject angle from any digit observed in this text (if present) and decay.
+    if (window.RotCtx && RotCtx.recent>0){
+      const seen = text.match(/\b([A-Z])(\d)\b/g) || [];
+      for(const tok of seen){
+        const m=/^([A-Z])(\d)$/.exec(tok); if(!m) continue;
+        const L=m[1], d=parseInt(m[2],10);
+        const ang = Entangle.angleMap[d]; if(!ang) continue;
+        S[L]=T.rotate(S[L], ang);
+      }
+      RotCtx.decay();
+    }
+
+    return { S, touched: lettersTouched(text) };
   }
 
   // ---------- Scheduler and game loop ----------
