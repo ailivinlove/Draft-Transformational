@@ -557,13 +557,14 @@ const Entangle = (function(){
 </script>
 
 <script>
-const OpCtx = { lastOp:null, touch:null, clear(){ this.lastOp=null; this.touch=null; } };
+const OpCtx = { lastOp:null, touch:false, clear(){ this.lastOp=null; this.touch=false; } };
 </script>
 
 <script>
   function applyArithPremise(S0, text){
     const S = cloneStore(S0);
     const tokens = text.split(/\s+/).filter(Boolean);
+    const digits = Array(tokens.length).fill(null);
     OpCtx.clear();
 
     // helper
@@ -584,32 +585,36 @@ const OpCtx = { lastOp:null, touch:null, clear(){ this.lastOp=null; this.touch=n
       if(m){
         const L=m[1], d=parseInt(m[2],10);
         S[L]=Entangle.applyLocal(S[L], d);
+        digits[i]=d;
         tokens[i]=L; // collapse to the letter to stay within ≤7 tokens downstream
       }
     }
 
     // PASS 2 — directional binary routing + operator carry
+    let lastOperandHadDigit=false;
     for(let i=0;i<tokens.length;i++){
       const t = tokens[i];
       if(t==='+'||t==='−'||t==='-'||t==='×'||t==='*'||t==='÷'||t==='/'){
         OpCtx.lastOp = t;
+        OpCtx.touch = lastOperandHadDigit;
         continue;
       }
       const cur = parseLD(tokens[i]);
-      if(!cur) continue;
-
-      // If previous token had a digit (captured in PASS 1) we already applied local.
-      // Now apply operator-coupled carry: the weight routes to NEXT operand when a digit suffix exists on that next operand.
-      const nxt = (i+1<tokens.length)?parseLD(tokens[i+1]):null;
-      if (OpCtx.lastOp && nxt && nxt.d==null){
-        // if NEXT lacks a digit, but OWNER had one earlier, reuse OWNER's implied weight=2 silently
-        S[nxt.L] = Entangle.routeNext(OpCtx.lastOp, S[nxt.L], 2);
-        OpCtx.lastOp = null;
-      } else if (OpCtx.lastOp && nxt && nxt.d!=null){
-        // NEXT has a digit → route that exact digit weight to NEXT before collapsing
-        S[nxt.L] = Entangle.routeNext(OpCtx.lastOp, S[nxt.L], nxt.d);
-        OpCtx.lastOp = null;
+      if(!cur){
+        lastOperandHadDigit=false;
+        continue;
       }
+
+      const curDigit = digits[i];
+      if (OpCtx.lastOp){
+        const weight = curDigit != null ? curDigit : (OpCtx.touch ? 2 : null);
+        if (weight != null){
+          S[cur.L] = Entangle.routeNext(OpCtx.lastOp, S[cur.L], weight);
+        }
+        OpCtx.lastOp = null;
+        OpCtx.touch = false;
+      }
+      lastOperandHadDigit = curDigit != null;
     }
 
     // LATENT rotations: if prior explicit rotate occurred recently (RotCtx.recent>0),
