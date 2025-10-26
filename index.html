@@ -430,40 +430,32 @@
 
   function startAutoAdvance(){
     clearTimers();
-    // read latest value each trial to allow on-the-fly changes
     const inp = document.getElementById('secPerTrial');
     const val = inp ? parseFloat(inp.value) : NaN;
     secondsPerTrial = isFinite(val) && val > 0 ? val : 3;
 
-    // countdown display
     const cd = document.getElementById('cdBadge');
     let remain = secondsPerTrial;
     if (cd) cd.textContent = '⏱ ' + remain.toFixed(1) + 's';
 
-    // tick every 100ms for smoothness; update badge each ~500ms
-    let lastBadgeUpdate = 0;
     const t0 = performance.now();
-
     countdownTimer = setInterval(()=>{
       const dt = (performance.now() - t0)/1000;
       remain = Math.max(0, secondsPerTrial - dt);
-      if (cd && performance.now() - lastBadgeUpdate > 200) {
-        cd.textContent = '⏱ ' + remain.toFixed(1) + 's';
-        lastBadgeUpdate = performance.now();
-      }
+      if (cd) cd.textContent = '⏱ ' + remain.toFixed(1) + 's';
+
       if (remain <= 0){
+        // stop timer; advance immediately
         clearTimers();
+        if (typeof Game !== 'undefined' && Game.done && Game.done()) {
+          // final state
+          const st = document.getElementById('status');
+          if (st) st.textContent = 'complete';
+          return;
+        }
+        next(); // renderEntry() will restart the per-trial timer
       }
     }, 100);
-
-    // auto-advance when time elapses
-    trialTimer = setTimeout(()=>{
-      clearTimers();
-      // If the game is already finished, do nothing
-      if (typeof Game !== 'undefined' && Game.done && Game.done()) return;
-      // Auto-advance to next trial
-      next();
-    }, Math.max(50, secondsPerTrial * 1000));
   }
 
   function renderEntry(e){
