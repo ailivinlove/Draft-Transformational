@@ -349,6 +349,13 @@ const UltraMask = (function(){
   function tokCount(s){ return s.trim().split(/\s+/).filter(Boolean).length; }
   function withinBudget(s, max=7){ return tokCount(s) <= max; }
 
+  window.IW_DBG = window.IW_DBG || { fam:{} };
+  function bumpFam(tag){
+    if(!window.IW_DBG) window.IW_DBG = { fam:{} };
+    if(!window.IW_DBG.fam) window.IW_DBG.fam = {};
+    window.IW_DBG.fam[tag] = (window.IW_DBG.fam[tag] || 0) + 1;
+  }
+
   // ---------- Novelty guard + RNG mixing ----------
   (function(){
     const MEM_KEY='iw_novelty_v1';
@@ -364,7 +371,7 @@ const UltraMask = (function(){
 
     function structSig(txt){
       const t = txt
-        .replace(/\b[A-Z]\d{0,2}\b/g,'L#')       // letter(+digits)
+        .replace(/\b([A-Z])(\d{0,2})\b/g,'L{$1}$2')       // letter(+digits) keeping identity
         .replace(/√L#/g,'SQRT')
         .replace(/\binverted\b/ig,'INV')
         .replace(/\brotate(\d+)\b/ig,'ROT$1')
@@ -420,7 +427,8 @@ const UltraMask = (function(){
         }
         const isFresh = !!(cfg.ignoreSession && this.lastRecordedText === hTxt);
         if(this.mem.has(hTxt) && !isFresh) return false;
-        if(!cfg.ignoreSession && this.seenStructRecent.includes(hSig)) return false;
+        // allow same structural family within a run; rely on exact-text novelty only
+        // if(!cfg.ignoreSession && this.seenStructRecent.includes(hSig)) return false;
         return true;
       },
       resetSession(){
@@ -537,12 +545,12 @@ const UltraMask = (function(){
     function pickWeightedFamily(r){
       // discourage immediate repeats and encourage rarer templates
       const base = families.map((f,i)=>({i,w:1}));
-      // favor rotate, reflectLine, project, lattice
-      const boost = {tplRotate:2.4, tplReflectLine:2.0, tplProject:1.8, tplLattice:1.6};
+      // favor midpoint, bisect, directional, and scale when under-represented
+      const boost = {tplMidpoint:2.2, tplBisect:2.4, tplDir:1.8, tplScale:1.6};
       for (let k=0;k<families.length;k++){
         const name = families[k].name || '';
         base[k].w *= (boost[name]||1);
-        if (k===lastFam) base[k].w *= 0.25; // suppress back-to-back
+        if (k===lastFam) base[k].w *= 0.6; // soften back-to-back suppression
       }
       const sum = base.reduce((s,x)=>s+x.w,0);
       let t=r()*sum;
@@ -555,10 +563,18 @@ const UltraMask = (function(){
         const idx = pickWeightedFamily(r);
         const f = families[idx];
         const txt = sanitizeText(f(r));
-        if(tokenEntropyScore(txt) < 3) continue;
+        const low = /midpoint|bisects/i.test(txt) ? 2 : 3;
+        if(tokenEntropyScore(txt) < low) continue;
         if(!withinBudget(txt,7)) continue;
         if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(txt)) continue;
         lastFam = idx;
+        if(/\bmidpoint\b/i.test(txt)) bumpFam('mid');
+        else if(/\bbisects\b/i.test(txt)) bumpFam('bis');
+        else if(/\bproject\b/i.test(txt)) bumpFam('proj');
+        else if(/\breflect\b/i.test(txt)) bumpFam('refl');
+        else if(/\brotate\d+\b/i.test(txt)) bumpFam('rot');
+        else if(/\bscale\d+\b/i.test(txt)) bumpFam('scl');
+        else if(/\b(east|west|north|south)\b/i.test(txt)) bumpFam('dir');
         return { text: txt, touched: lettersTouched(txt) };
       }
       throw new Error('GeomGen failed: novelty budget exhausted');
@@ -572,20 +588,23 @@ const UltraMask = (function(){
       const LTRS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''); const BIN=['+','−','×','÷'];
       const pick=L=>L[Math.floor(r()*L.length)]; const L=()=>pick(LTRS);
       const d=()=> String(2+Math.floor(r()*11)); // 2..12
-      if (r()<0.68){
+      if (r()<0.55){
         // 3–5 tokens, guaranteed one unary and one suffixed
         const head = (r()<0.5? `√${L()}` : `inverted ${L()}`);
         const op   = pick(BIN);
         const tail = `${L()}${d()}`;
         return sanitizeText(`${head} ${op} ${tail}`);
       } else {
-        // 5–6 tokens, two suffixed + one unary tail to trigger tri-coupling
+        // two suffixed + one unary tail OR exponent to trigger tri-coupling
         const a = `${L()}${d()}`;
         const op1 = pick(BIN);
         const b = `${L()}${d()}`;
         const op2 = pick(BIN);
         const tail = (r()<0.5? `√${L()}` : `inverted ${L()}`);
-        return sanitizeText(`${a} ${op1} ${b} ${op2} ${tail}`);
+        const usePow = r()<0.5;
+        return sanitizeText(usePow
+          ? `${a} ${op1} ${b} ${op2} ${L()}^${Math.floor(2+r()*3)}`
+          : `${a} ${op1} ${b} ${op2} ${tail}`);
       }
     }
     function generate(r){
@@ -608,6 +627,10 @@ const UltraMask = (function(){
     clean.split(/\s+/).forEach(tok=>{ if(tok && tok.length===1) set.add(tok) });
     return Array.from(set);
   }
+
+  function unit(v){const L=Math.hypot(v.x,v.y)||1; return {x:v.x/L,y:v.y/L};}
+  function add(a,b){return {x:a.x+b.x,y:a.y+b.y};}
+  function fromTo(u,v){return {x:v.x-u.x,y:v.y-u.y};}
 
   // ---------- Parser + evaluator ----------
   function applyGeomPremise(S0, text){
@@ -670,25 +693,49 @@ const UltraMask = (function(){
       }
     }
     if(/\bmidpoint\b/i.test(text)){
-      if(touched.includes('A') && touched.includes('B') && S['C']){
-        const m=T.midpoint(S['A'],S['B']);
-        const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
-        const key = use2 ? 'pos2' : 'pos';
-        S['C']={...S['C'],[key]:{x:m.x,y:m.y}};
+      const m=/\b([A-Z])\s+midpoint\s+of\s+([A-Z])\s*,\s*([A-Z])\b/i.exec(text);
+      if(m){
+        const C=m[1], A=m[2], B=m[3];
+        if(S[C] && S[A] && S[B]){
+          const mid=T.midpoint(S[A],S[B]);
+          const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+          const key = use2 ? 'pos2' : 'pos';
+          S[C]={...S[C],[key]:{x:mid.x,y:mid.y}};
+        }
+      }
+    }
+    if(/\bbisects\b/i.test(text)){
+      const m=/\b([A-Z])\s+bisects\s+angle\s+([A-Z])([A-Z])([A-Z])\s+at\s+([A-Z])\b/i.exec(text);
+      if(m){
+        const V=m[1], S1=m[2], U=m[3], T1=m[4], pivot=m[5]||m[3];
+        if(S[V] && S[S1] && S[T1] && S[pivot]){
+          const use2=(window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+          const key=use2?'pos2':'pos';
+          const Su=use2?S[pivot].pos2:S[pivot].pos;
+          const Ss=use2?S[S1].pos2:S[S1].pos;
+          const St=use2?S[T1].pos2:S[T1].pos;
+          const a=unit(fromTo(Su,Ss)), b=unit(fromTo(Su,St));
+          const d=unit(add(a,b));
+          const base=S[V]||{};
+          const anchor=(base && base[key]) ? base[key] : (use2?base.pos2:base.pos) || {x:Su.x,y:Su.y};
+          const len=Math.hypot((anchor.x-Su.x),(anchor.y-Su.y))||1;
+          S[V]={...S[V],[key]:{x:Su.x+d.x*len,y:Su.y+d.y*len}};
+        }
       }
     }
     // axis moves with counts like "3 east"
     function moveSteps(S, touched, dir, n){
-      for(const L of touched){
-        let s=S[L];
-        for(let i=0;i<n;i++){
-          if(dir==='north') s=T.north(s);
-          else if(dir==='south') s=T.south(s);
-          else if(dir==='east') s=T.east(s);
-          else if(dir==='west') s=T.west(s);
-        }
-        S[L]=s;
+      const target=touched[0];
+      if(!target) return;
+      let s=S[target];
+      if(!s) return;
+      for(let i=0;i<n;i++){
+        if(dir==='north') s=T.north(s);
+        else if(dir==='south') s=T.south(s);
+        else if(dir==='east') s=T.east(s);
+        else if(dir==='west') s=T.west(s);
       }
+      S[target]=s;
     }
     const mNorth = /(\d+)\s+north\b/i.exec(text), mSouth=/(\d+)\s+south\b/i.exec(text),
           mEast = /(\d+)\s+east\b/i.exec(text),  mWest = /(\d+)\s+west\b/i.exec(text);
@@ -923,7 +970,9 @@ window.IW_COST = {
     const ks = Array.from(new Set(touched));
     for(const L of ks){
       const s=S[L];
-      sum += Math.abs(s.polarity)*0.5 + Math.abs(s.level)*0.1 + Math.hypot(s.pos.x - s.pos2.x, s.pos.y - s.pos2.y)*0.2;
+      sum += Math.min(1, Math.abs(s.polarity))*0.5
+           + Math.min(2, Math.abs(s.level))*0.1
+           + Math.min(3, Math.hypot(s.pos.x - s.pos2.x, s.pos.y - s.pos2.y))*0.2;
     }
     return sum;
   },
@@ -1003,12 +1052,25 @@ window.IW_COST = {
           item.touched.forEach(L=>touchedAll.add(L));
         }
         if (!ok) continue;
-        const Rh = resultantHash(Sshadow, Array.from(touchedAll));
+        const touchedList = Array.from(touchedAll);
+        const Rh = resultantHash(Sshadow, touchedList);
         const isCond = targetHashOrNull==null
           ? !(Game.t>=Game.N && Rh === Rbuf[Game.t-Game.N])
           : (Rh === targetHashOrNull);
         if (!isCond) continue;
-        const c = (window.IW_COST? IW_COST.C(Sshadow, Array.from(touchedAll)) : 0);
+        const fam = texts.map(t=>{
+          if(/\bmidpoint\b/i.test(t)) return 'mid';
+          if(/\bbisects\b/i.test(t)) return 'bis';
+          if(/\bproject\b/i.test(t)) return 'proj';
+          if(/\breflect\b/i.test(t)) return 'refl';
+          if(/\brotate\d+\b/i.test(t)) return 'rot';
+          if(/\bscale\d+\b/i.test(t)) return 'scl';
+          if(/\b(east|west|north|south)\b/i.test(t)) return 'dir';
+          return 'other';
+        });
+        const diversity = new Set(fam).size / Math.max(1,fam.length);
+        const baseCost = (window.IW_COST? IW_COST.C(Sshadow, touchedList) : 0);
+        const c = baseCost - 0.25*diversity;
         if (c < bestCost){ bestCost=c; best={ texts, Rh, Snext:Sshadow }; }
       }
       return best;
