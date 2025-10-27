@@ -46,7 +46,7 @@
         <label>Arithmetic ratio q:</label>
         <input id="arithRatio" type="number" step="0.05" min="0" max="1" value="0.35">
         <label>Seconds / trial:</label>
-        <input id="secPerTrial" type="number" step="0.5" min="0.5" value="3">
+        <input id="secPerTrial" type="number" step="0.5" min="0.5" value="8">
         <label>Premises / trial:</label>
         <input id="premisesPerTrial" type="number" min="1" max="12" step="1" value="1" title="How many premises to execute inside each trial">
         <button id="startBtn" type="button">Start</button>
@@ -915,7 +915,7 @@ window.EchoMem = EchoMem;
     acc:document.getElementById('mAcc')
   };
   let curEntry=null, startTime=0, stats={hit:0, miss:0, fa:0, cr:0};
-  let secondsPerTrial = 3;      // default; read from input each trial
+  let secondsPerTrial = 8;      // default; read from input each trial
   let autoRafId = 0;            // requestAnimationFrame handle
   let trialDeadlineMs = 0;      // absolute time when current trial should auto-advance
   let trialEpoch = 0;           // increments each trial to invalidate stale ticks
@@ -929,7 +929,7 @@ window.EchoMem = EchoMem;
     // read latest value each trial so user can adjust on the fly
     const inp = document.getElementById('secPerTrial');
     const val = inp ? parseFloat(inp.value) : NaN;
-    secondsPerTrial = isFinite(val) && val > 0 ? val : 3;
+    secondsPerTrial = isFinite(val) && val > 0 ? val : 8;
 
     trialEpoch++; // new trial epoch
     const myEpoch = trialEpoch;
