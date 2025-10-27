@@ -123,7 +123,10 @@
     for(const L of letters){
       S[L]={
         id:L,
+        // semantic space
         pos:{x:0,y:0},
+        // structural space
+        pos2:{x:0,y:0},
         level:0,
         polarity:0,
         intensity:1,
@@ -134,25 +137,53 @@
   }
   function cloneStore(S){return JSON.parse(JSON.stringify(S));}
 
+  window.IW_CTX = {
+    mode: 0,
+    epoch: 0,
+    carryBits: { invert:0, rotate:0, scale:0, route:0 },
+    persistAnchor: null,
+    spaceFlip: 0,
+    rotatingN: [2,3,4],
+    trialIndex: 0
+  };
+
   // ---------- Transform library (pure) ----------
   const T={
     north(s){return {...s, level:s.level+1, intensity:s.intensity*1.05}},
     south(s){return {...s, level:s.level-1, intensity:s.intensity*0.95}},
-    east(s){return {...s, pos:{x:s.pos.x+1,y:s.pos.y}, polarity:0}},
-    west(s){return {...s, pos:{x:s.pos.x-1,y:s.pos.y}, polarity: s.polarity===0?-1:-s.polarity}},
+    east(s){const u=(IW_CTX&&IW_CTX.spaceFlip)%2===1;const p=u?s.pos2:s.pos;return {...s,[u?'pos2':'pos']:{x:p.x+1,y:p.y},polarity:0}},
+    west(s){const u=(IW_CTX&&IW_CTX.spaceFlip)%2===1;const p=u?s.pos2:s.pos;return {...s,[u?'pos2':'pos']:{x:p.x-1,y:p.y},polarity:s.polarity===0?-1:-s.polarity}},
     // geometric
-    rotate(s,deg){const rad=deg*Math.PI/180; const c=Math.cos(rad), d=Math.sin(rad);
-      const x=s.pos.x*c - s.pos.y*d, y=s.pos.x*d + s.pos.y*c;
-      return {...s, pos:{x,y}, phase:(s.phase+deg)%360};},
-    reflectAcrossCenter(s){return {...s, pos:{x:-s.pos.x,y:-s.pos.y}, polarity:-s.polarity}},
-    scaleFromCenter(s,k){return {...s, pos:{x:s.pos.x*k,y:s.pos.y*k}, intensity:s.intensity*Math.pow(1.02,k)}},
-    projectToLineUV(s, U, V){ // crude projection onto line through U,V in current S
-      const ux=U.pos.x, uy=U.pos.y, vx=V.pos.x, vy=V.pos.y;
-      const dx=vx-ux, dy=vy-uy, L2 = dx*dx+dy*dy || 1;
-      const t = ((s.pos.x-ux)*dx + (s.pos.y-uy)*dy)/L2;
-      return {...s, pos:{x:ux+t*dx, y:uy+t*dy}};
+    rotate(s,deg){
+      const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+      const p = use2 ? s.pos2 : s.pos;
+      const rad=deg*Math.PI/180, c=Math.cos(rad), d=Math.sin(rad);
+      const x=p.x*c - p.y*d, y=p.x*d + p.y*c;
+      return {...s, [use2?'pos2':'pos']:{x,y}, phase:(s.phase+deg)%360};},
+    reflectAcrossCenter(s){
+      const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+      const p = use2 ? s.pos2 : s.pos;
+      return {...s, [use2?'pos2':'pos']:{x:-p.x,y:-p.y}, polarity:-s.polarity}
     },
-    midpoint(a,b){return {x:(a.pos.x+b.pos.x)/2, y:(a.pos.y+b.pos.y)/2}},
+    scaleFromCenter(s,k){
+      const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+      const p = use2 ? s.pos2 : s.pos;
+      return {...s, [use2?'pos2':'pos']:{x:p.x*k,y:p.y*k}, intensity:s.intensity*Math.pow(1.02,k)}
+    },
+    projectToLineUV(s, U, V){ // crude projection onto line through U,V in current S
+      const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+      const up = use2 ? U.pos2 : U.pos, vp = use2 ? V.pos2 : V.pos, sp = use2 ? s.pos2 : s.pos;
+      const ux=up.x, uy=up.y, vx=vp.x, vy=vp.y;
+      const dx=vx-ux, dy=vy-uy, L2 = dx*dx+dy*dy || 1;
+      const t = ((sp.x-ux)*dx + (sp.y-uy)*dy)/L2;
+      return {...s, [use2?'pos2':'pos']:{x:ux+t*dx, y:uy+t*dy}};
+    },
+    midpoint(a,b){
+      const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+      const ap = use2 ? a.pos2 : a.pos;
+      const bp = use2 ? b.pos2 : b.pos;
+      return {x:(ap.x+bp.x)/2, y:(ap.y+bp.y)/2};
+    },
     // arithmetic semantics on intensity/level/polarity
     add(s,k=1){return {...s, intensity: s.intensity + k}},
     sub(s,k=1){return {...s, intensity: Math.max(0, s.intensity - k)}},
@@ -160,7 +191,15 @@
     div(s,k=2){return {...s, intensity: s.intensity / (k||1)}},
     sqrt(s){return {...s, intensity: Math.sqrt(Math.max(0, s.intensity))}},
     powLevel(s,k=1){return {...s, level: s.level + k}},
-    invert(s){return {...s, polarity: s.polarity===0?-1:-s.polarity, pos:{x:-s.pos.x,y:-s.pos.y}}}
+    invert(s){
+      const k = (window.IW_CTX&&IW_CTX.carryBits.invert)||0;
+      const use2 = (window.IW_CTX&&IW_CTX.spaceFlip)%2===1;
+      const p = use2 ? s.pos2 : s.pos;
+      if (k===0) return {...s, [use2?'pos2':'pos']:{x:-p.x,y:-p.y}, polarity:-s.polarity};
+      if (k===1) return {...s, polarity: s.polarity===0?-1:-s.polarity};
+      const out = {...s, [use2?'pos2':'pos']:{x:-p.x,y:-p.y}, polarity:-s.polarity};
+      return window.T.rotate(out, 36);
+    }
   };
 
   // ---- Digit/Context masks ----
@@ -573,7 +612,12 @@ const UltraMask = (function(){
   // ---------- Parser + evaluator ----------
   function applyGeomPremise(S0, text){
     const S = cloneStore(S0);
+    const seedLocal = (typeof mixSeed==='function') ? mixSeed(0xA5A5A5A5 ^ (IW_CTX.trialIndex>>>0)) : (Date.now()>>>0);
+    const randLocal = mulberry32(seedLocal);
     const touched = lettersTouched(text);
+    if (window.IW_CTX && IW_CTX.persistAnchor && !touched.includes(IW_CTX.persistAnchor)) {
+      touched.push(IW_CTX.persistAnchor);
+    }
     const digs = (text.match(/\b([A-Z])(\d{1,2})\b/g)||[])
                  .map(s=>parseInt(s.replace(/^[A-Z]/,''),10))
                  .sort((a,b)=>a-b);
@@ -616,14 +660,21 @@ const UltraMask = (function(){
       for (const L of touched){
         if (L===L1 || L===L2) continue;
         const proj = T.projectToLineUV(S[L], P1, P2);
-        const mx = 2*proj.pos.x - S[L].pos.x;
-        const my = 2*proj.pos.y - S[L].pos.y;
-        S[L] = {...S[L], pos:{x:mx,y:my}, polarity:-S[L].polarity};
+        const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+        const key = use2 ? 'pos2' : 'pos';
+        const base = use2 ? S[L].pos2 : S[L].pos;
+        const projPos = use2 ? (proj.pos2 || proj.pos) : proj.pos;
+        const mx = 2*projPos.x - base.x;
+        const my = 2*projPos.y - base.y;
+        S[L] = {...S[L], [key]:{x:mx,y:my}, polarity:-S[L].polarity};
       }
     }
     if(/\bmidpoint\b/i.test(text)){
       if(touched.includes('A') && touched.includes('B') && S['C']){
-        const m=T.midpoint(S['A'],S['B']); S['C']={...S['C'],pos:{x:m.x,y:m.y}};
+        const m=T.midpoint(S['A'],S['B']);
+        const use2 = (window.IW_CTX && IW_CTX.spaceFlip)%2===1;
+        const key = use2 ? 'pos2' : 'pos';
+        S['C']={...S['C'],[key]:{x:m.x,y:m.y}};
       }
     }
     // axis moves with counts like "3 east"
@@ -681,6 +732,23 @@ const UltraMask = (function(){
       const L0 = touched[0];
       S[L0] = Entangle.routeNext(e.op, S[L0], e.d);
     }
+    if (touched.length){
+      const L0 = touched[0];
+      if (window.IW_MACRO && IW_MACRO.guard(S, L0)) { IW_MACRO.apply(S, L0); }
+    }
+    if (!IW_COST.check(S)) {
+      IW_COST.repair(S);
+      if (window.IW_CTX && IW_CTX.persistAnchor && randLocal()<0.25){
+        const L = IW_CTX.persistAnchor;
+        S[L] = T.rotate(S[L], 36);
+      }
+    }
+    if (window.IW_CTX){
+      IW_CTX.carryBits.invert = (IW_CTX.carryBits.invert + (text.includes('inverted')?1:0)) % 4;
+      IW_CTX.carryBits.rotate = (IW_CTX.carryBits.rotate + (/\brotate\d+\b/i.test(text)?1:0)) % 3;
+      IW_CTX.carryBits.route  = (IW_CTX.carryBits.route + ((text.match(/[+\-−×*÷\/]/g)||[]).length>0?1:0)) % 2;
+      IW_CTX.carryBits.scale  = (IW_CTX.carryBits.scale + (/\bscale\d+\b/i.test(text)?1:0)) % 3;
+    }
     return { S, touched };
   }
 
@@ -699,14 +767,43 @@ const OpSeq = {
     if (this.a==='−' && this.b===(op||'÷')) S[L]=T.div(T.sub(S[L],2),2);
   }
 };
+
+window.OpRemap = {
+  map(op){
+    const m = (window.IW_CTX&&IW_CTX.mode)||0;
+    if(m===1){ if(op==='+')return '−'; if(op==='−'||op==='-')return '+'; }
+    if(m===2){ if(op==='×'||op==='*')return '÷'; if(op==='÷'||op==='/')return '×'; }
+    if(m===3){
+      return op;
+    }
+    return op;
+  },
+  bracket(a,b){
+    return (window.IW_CTX&&IW_CTX.mode)===3;
+  }
+};
+
+window.IW_MACRO = {
+  guard(S,L){ return (S[L].intensity||1) > 8; },
+  apply(S,L){
+    S[L] = T.rotate(S[L], 36);
+    S[L] = T.invert(S[L]);
+    return S;
+  }
+};
 </script>
 
 <script>
   function applyArithPremise(S0, text){
     const S = cloneStore(S0);
+    const seedLocal = (typeof mixSeed==='function') ? mixSeed(0xA5A5A5A5 ^ (IW_CTX.trialIndex>>>0)) : (Date.now()>>>0);
+    const randLocal = mulberry32(seedLocal);
     const tokens = text.split(/\s+/).filter(Boolean);
     const curDigits = [];
     const touched = lettersTouched(text);
+    if (window.IW_CTX && IW_CTX.persistAnchor && !touched.includes(IW_CTX.persistAnchor)) {
+      touched.push(IW_CTX.persistAnchor);
+    }
     OpCtx.clear(); OpSeq.clear();
 
     function parseLD(tok){ const m=/^([A-Z])(\d{1,2})?$/.exec(tok); return m?{L:m[1],d:m[2]?parseInt(m[2],10):null}:null; }
@@ -737,10 +834,17 @@ const OpSeq = {
       const nxt=(i+1<tokens.length)?parseLD(tokens[i+1]):null;
 
       if (OpCtx.lastOp){
+        let opEff = OpRemap.map(OpCtx.lastOp);
         const d = (nxt && nxt.d!=null)? nxt.d : 2;
-        S[cur.L] = Entangle.routeNext(OpCtx.lastOp, S[cur.L], d);
+        if (OpRemap.bracket(OpSeq.a, opEff)) {
+          S[cur.L] = Entangle.routeNext(opEff, S[cur.L], d);
+          S[cur.L] = Entangle.routeNext(opEff, S[cur.L], Math.max(2,d-1));
+        } else {
+          S[cur.L] = Entangle.routeNext(opEff, S[cur.L], d);
+        }
         // sequence carry on current letter
         OpSeq.mix(S, cur.L, OpCtx.lastOp);
+        if (window.IW_MACRO && IW_MACRO.guard(S, cur.L)) { IW_MACRO.apply(S, cur.L); }
         // record echo for next trial
         if (window.EchoMem && EchoMem.set) EchoMem.set(OpCtx.lastOp, d, cur.L);
         OpCtx.lastOp=null;
@@ -777,6 +881,19 @@ const OpSeq = {
       RotCtx.decay();
     }
 
+    if (!IW_COST.check(S)) {
+      IW_COST.repair(S);
+      if (window.IW_CTX && IW_CTX.persistAnchor && randLocal()<0.25){
+        const L = IW_CTX.persistAnchor;
+        S[L] = T.rotate(S[L], 36);
+      }
+    }
+    if (window.IW_CTX){
+      IW_CTX.carryBits.invert = (IW_CTX.carryBits.invert + (text.includes('inverted')?1:0)) % 4;
+      IW_CTX.carryBits.rotate = (IW_CTX.carryBits.rotate + (/\brotate\d+\b/i.test(text)?1:0)) % 3;
+      IW_CTX.carryBits.route  = (IW_CTX.carryBits.route + ((text.match(/[+\-−×*÷\/]/g)||[]).length>0?1:0)) % 2;
+      IW_CTX.carryBits.scale  = (IW_CTX.carryBits.scale + (/\bscale\d+\b/i.test(text)?1:0)) % 3;
+    }
     return { S, touched };
   }
 
@@ -800,6 +917,33 @@ window.EchoMem = EchoMem;
 </script>
 
 <script>
+window.IW_COST = {
+  C(S, touched){
+    let sum=0;
+    const ks = Array.from(new Set(touched));
+    for(const L of ks){
+      const s=S[L];
+      sum += Math.abs(s.polarity)*0.5 + Math.abs(s.level)*0.1 + Math.hypot(s.pos.x - s.pos2.x, s.pos.y - s.pos2.y)*0.2;
+    }
+    return sum;
+  },
+  check(S){
+    const A = (window.IW_CTX && IW_CTX.persistAnchor) || null;
+    if (!A) return true;
+    const s=S[A];
+    const d = Math.hypot(s.pos.x - s.pos2.x, s.pos.y - s.pos2.y);
+    return d <= 5;
+  },
+  repair(S){
+    const A = (window.IW_CTX && IW_CTX.persistAnchor) || null;
+    if (!A) return S;
+    const s=S[A];
+    const nx = (s.pos.x*2 + s.pos2.x)/3, ny=(s.pos.y*2 + s.pos2.y)/3;
+    S[A] = {...s, pos2:{x:nx,y:ny}};
+    return S;
+  }
+};
+
   // ---------- Scheduler and game loop ----------
   const Game=(function(){
     let rng, S, log=[], Rbuf=[], t=0, N=2, totalTrials=60, pMatch=0.32, qArith=0.35, bundleCount=1;
@@ -813,6 +957,19 @@ window.EchoMem = EchoMem;
       if (window.RotCtx) RotCtx.recent = 0;
       if (window.TrialMem) TrialMem.clear();
       if (window.EchoMem) EchoMem.last=null;
+      if (window.IW_CTX){
+        IW_CTX.trialIndex = 0;
+        IW_CTX.mode = 0;
+        IW_CTX.spaceFlip = 0;
+        IW_CTX.epoch++;
+        IW_CTX.carryBits = IW_CTX.carryBits || { invert:0, rotate:0, scale:0, route:0 };
+        IW_CTX.carryBits.invert = 0;
+        IW_CTX.carryBits.rotate = 0;
+        IW_CTX.carryBits.scale = 0;
+        IW_CTX.carryBits.route = 0;
+        const Ls='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        IW_CTX.persistAnchor = Ls[Math.floor((seed%26+IW_CTX.epoch)%26)];
+      }
     }
     function sampleMode(){
       const want = (rng()<qArith) ? 'arith' : 'geom';
@@ -826,35 +983,35 @@ window.EchoMem = EchoMem;
       if (window.IW_Novelty && IW_Novelty.isNovel && !IW_Novelty.isNovel(text)) return null;
       const S1 = cloneStore(Store);
       const res = (mode==='arith') ? applyArithPremise(S1,text) : applyGeomPremise(S1,text);
+      if (window.IW_CTX && IW_CTX.persistAnchor && res && res.touched && !res.touched.includes(IW_CTX.persistAnchor)){
+        res.touched.push(IW_CTX.persistAnchor);
+      }
       return { text, S1: res.S, touched: res.touched };
     }
 
     function buildBundle(mode,targetHashOrNull){
-      // When targetHashOrNull is null → non-match. Otherwise we seek that hash.
-      // We keep the same mode across the bundle for determinism.
-      for (let outer=0; outer<600; outer++){
-        let texts=[], Sshadow=cloneStore(S), touchedAll=new Set();
+      const K = 6;
+      let best=null, bestCost=Infinity;
+      for (let k=0;k<K;k++){
+        let texts=[], Sshadow=cloneStore(S), touchedAll=new Set(), ok=true;
         for (let i=0;i<bundleCount;i++){
-          // Try up to a few attempts per item to keep novelty/budget
           let item=null, tries=0;
           while(!item && tries<80){ item = genOne(mode,rng,Sshadow); tries++; }
-          if(!item){ texts=[]; break; }
+          if(!item){ ok=false; break; }
           texts.push(item.text);
           Object.assign(Sshadow, item.S1);
           item.touched.forEach(L=>touchedAll.add(L));
         }
-        if (!texts.length) continue;
+        if (!ok) continue;
         const Rh = resultantHash(Sshadow, Array.from(touchedAll));
-        if (targetHashOrNull==null){
-          // Non-match path: avoid accidental match when t>=N
-          if (Game.t>=Game.N && Rh === Rbuf[Game.t-Game.N]) continue;
-          return { texts, Rh, Snext:Sshadow };
-        } else {
-          if (Rh !== targetHashOrNull) continue;
-          return { texts, Rh, Snext:Sshadow };
-        }
+        const isCond = targetHashOrNull==null
+          ? !(Game.t>=Game.N && Rh === Rbuf[Game.t-Game.N])
+          : (Rh === targetHashOrNull);
+        if (!isCond) continue;
+        const c = (window.IW_COST? IW_COST.C(Sshadow, Array.from(touchedAll)) : 0);
+        if (c < bestCost){ bestCost=c; best={ texts, Rh, Snext:Sshadow }; }
       }
-      return null;
+      return best;
     }
 
     function buildNonMatch(mode){
@@ -879,6 +1036,14 @@ window.EchoMem = EchoMem;
       return buildNonMatch(mode);
     }
     function nextTrial(){
+      if (window.IW_CTX){
+        const sched = IW_CTX.rotatingN || [N];
+        const idx = IW_CTX.trialIndex % sched.length;
+        N = sched[idx];
+        IW_CTX.mode = (IW_CTX.mode + 1) % 4;
+        IW_CTX.spaceFlip ^= 1;
+        IW_CTX.trialIndex++;
+      }
       const mode = sampleMode();
       const wantMatch = (t>=N) && (rng()<0.30);
       const entry = wantMatch ? buildMatch(mode) : buildNonMatch(mode);
